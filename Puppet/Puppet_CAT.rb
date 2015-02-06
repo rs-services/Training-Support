@@ -42,6 +42,9 @@ name "Puppet Test Environment"
 rs_ca_ver 20131202
 short_description "![Puppet](http://upload.wikimedia.org/wikipedia/en/c/c5/Puppet_Labs_Logo.png)\n
 Deploys a Puppet Clent server and optionally a Puppet Master server."
+long_description "The Puppet Master is just for testing purposes. It is not production hardened.\n
+The Puppet Client server grabs a basic nginx manifest from the master.\n
+So you can easily see if things worked as expected by pointing your browser at the client server URL provided."
 
 ##############
 # Mappings    #
