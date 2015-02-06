@@ -28,15 +28,47 @@
 # CAT that deploys a Puppet Master server (optionally) and a Puppet Client server.
 #
 # PREREQUISITES and CAT PREPARATION:
-#   Server Template: 
-#     See the Puppet_Master_Config_RightScript found here: 
+#   Server Templates: 
+#     Master Server ServerTemplate:
+#       See the Puppet_Master_Config_RightScript found here: https://github.com/rs-services/Training-Support/blob/master/Puppet/Puppet_Master_Config_RightScript
+#       It provides instructions on how to create the necessary rightscript and servertemplate.
+#     Slave Server ServerTemplate:
+#       Import "Puppet Client Beta (v13.5)"
 #   SSH Key:
 #     The account must have an SSH key named "default"
 #       You do not need to know the private key for "default" since you can use your personal SSH key for any access needed.
 
-name 'Hello World Web Server - CHANGEME'
+name "Puppet Test Environment"
 rs_ca_ver 20131202
-short_description 'Automates the deployment of a simple single VM server.'
+short_description "![Puppet](http://upload.wikimedia.org/wikipedia/en/c/c5/Puppet_Labs_Logo.png)\n
+Deploys a Puppet Clent server and optionally a Puppet Master server."
+
+##############
+# Mappings    #
+##############
+
+# This CAT is more about Puppet than multiple clouds and stuff.
+# But it's still nice to have a single place to manage some of these settings.
+#define main() do 
+#  
+#  $$cat_cloud = 'us-east-1'
+#  $$cat_instance_type = 'm1.small'
+#  $$cat_ssh_key = 'default'
+#  $$master_servertemplate = 'Puppet Master Test Server'
+#  $$client_servertemplate = 'Puppet Client Beta (v13.5)'
+#  
+#end
+
+mapping "cat_map" do {
+  "globals" => {
+    "ssh_key" => "default",
+    "cloud" => "us-east-1",
+    "instance_type" => "m1.small",
+    "master_servertemplate" => "Puppet Master Test Server",
+    "client_servertemplate" => "Puppet Client Beta (v13.5)"
+  },
+}
+end
 
 ##############
 # PARAMETERS 
@@ -45,73 +77,13 @@ short_description 'Automates the deployment of a simple single VM server.'
 
 # Which cloud?
 # Maps to specific cloud below.
-parameter "param_location" do 
+parameter "param_deploy_master" do 
   category "Deployment Options"
-  label "Cloud" 
+  label "Do you want to deploy a Puppet Master server?" 
   type "string" 
-  description "Cloud to deploy in." 
-  allowed_values "AWS-US-East", "AWS-US-West"
-  default "AWS-US-East"
+  allowed_values "Yes", "No"
+  default "No"
 end
-
-# What type of instance?
-# Maps to a specific instance type below.
-parameter "param_performance" do 
-  category "Deployment Options"
-  label "Performance profile" 
-  type "string" 
-  description "Compute and RAM" 
-  allowed_values "low", "medium", "high"
-  default "low"
-end
-
-# What text does the user want the web server to display when browser is pointed at it.
-parameter "param_webtext" do 
-  category "Application Options"
-  label "Web Text" 
-  type "string" 
-  description "Text to display on the web server." 
-  default "Hello World!"
-end
-
-
-
-##############
-# MAPPINGS   #
-##############
-
-# Maps the user's selected performance level into a specific instance type.
-mapping "map_instance_type" do {
-  "AWS" => {
-    "low" => "m1.small",  
-    "medium" => "m1.medium", 
-    "high" => "c3.large", 
-  },
-}
-end
-
-# Maps the user's selected cloud into a specific cloud or region.
-mapping "map_cloud" do {
-  "AWS-US-East" => {
-    "provider" => "AWS",
-    "cloud" => "us-east-1",
-  },
-  "AWS-US-West" => {
-    "provider" => "AWS",
-    "cloud" => "us-west-1",
-  },
-}
-end
-
-# Account specific mappings
-mapping "map_account" do {
-  "training_account" => {
-    "ssh_key" => "default", # Be sure there is an ssh key called default or change this to an ssh key that does exist for the account. You do NOT need to have access to the private key.
-    "hello_world_script" => "helloworld_rightscript",  # This is the hello world script in the Hello World server template.
-  },
-}
-end
-
 
 ##############
 # CONDITIONS #
@@ -119,8 +91,8 @@ end
 
 # Checks if being deployed in AWS.
 # This is used to decide whether or not to pass an SSH key and security group when creating the servers.
-condition "inAWS" do
-  equals?(map($map_cloud, $param_location,"provider"), "AWS")
+condition "launchMaster" do
+  equals?($param_deploy_master, "Yes")
 end
 
 
@@ -128,43 +100,58 @@ end
 # OUTPUTS    #
 ##############
 
-output "server_url" do
-  label "Server URL" 
+output "master_server_ip" do
+  condition $launchMaster
+  label "Puppet Master server IP address"
   category "Connect"
-  default_value join(["http://", @web_server.public_ip_address])
-  description "Access the web server page."
+  default_value @master_server.public_ip_address
 end
 
+output "slave_server_ip" do
+  label "Puppet Client server IP address" 
+  category "Connect"
+  default_value @client_server.public_ip_address
+end
+
+output "slave_server_URL" do
+  label "Puppet Client server test URL" 
+  category "Connect"
+  default_value join(["http://", @client_server.public_ip_address])
+  description "You should see a nginx splash page."
+end
 
 ##############
 # RESOURCES  #
 ##############
 
-resource "sec_group", type: "security_group" do
-  name join(["HelloWorldSecGrp-",@@deployment.href])
-  description "Hello World web server security group."
-  cloud map( $map_cloud, $param_location, "cloud" )
+resource "puppetmaster_sec_group", type: "security_group" do
+  name join(["PuppetMasterSecGrp-",@@deployment.href])
+  condition $launchMaster
+  description "Puppet Master security group."
+  cloud map($cat_map, "globals", "cloud")
 end
 
-resource "sec_group_rule_http", type: "security_group_rule" do
-  name "HelloWorld Security Group HTTP Rule"
-  description "Allow HTTP access."
+resource "puppetmastersec_group_rule_tcp8140", type: "security_group_rule" do
+  name "PuppetMaster_TCP8140_rule"
+  condition $launchMaster
+  description "Allow port 8140 access - used by Puppet clients."
   source_type "cidr_ips"
-  security_group @sec_group
+  security_group @puppetmaster_sec_group
   protocol "tcp"
   direction "ingress"
   cidr_ips "0.0.0.0/0"
   protocol_details do {
-    "start_port" => "80",
-    "end_port" => "80"
+    "start_port" => "8140",
+    "end_port" => "8140"
   } end
 end
 
-resource "sec_group_rule_ssh", type: "security_group_rule" do
-  name "HelloWorld Security Group SSH Rule"
-  description "Allow SSH access."
+resource "puppetmastersec_group_rule_ssh", type: "security_group_rule" do
+  name "PuppetMaster_ssh_rule"
+  condition $launchMaster
+  description "Allow port ssh access"
   source_type "cidr_ips"
-  security_group @sec_group
+  security_group @puppetmaster_sec_group
   protocol "tcp"
   direction "ingress"
   cidr_ips "0.0.0.0/0"
@@ -174,16 +161,62 @@ resource "sec_group_rule_ssh", type: "security_group_rule" do
   } end
 end
 
+resource "puppetclient_sec_group", type: "security_group" do
+  name join(["PuppetClientSecGrp-",@@deployment.href])
+  description "Puppet Client security group."
+  cloud map($cat_map, "globals", "cloud")
+end
 
-resource "web_server", type: "server" do
-  name "Hello World Web Server"
-  cloud map( $map_cloud, $param_location, "cloud" )
-  instance_type  map( $map_instance_type, map( $map_cloud, $param_location,"provider"), $param_performance)
-  server_template find("Hello World Web Server")
-  ssh_key switch($inAWS, map($map_account, "training_account", "ssh_key"), null)
-  security_groups @sec_group
+resource "puppetclientsec_group_rule_http", type: "security_group_rule" do
+  name "PuppetClient_http_rule"
+  description "Allow http access - used for testing things worked."
+  source_type "cidr_ips"
+  security_group @puppetclient_sec_group
+  protocol "tcp"
+  direction "ingress"
+  cidr_ips "0.0.0.0/0"
+  protocol_details do {
+    "start_port" => "80",
+    "end_port" => "80"
+  } end
+end
+
+resource "puppetclientsec_group_rule_ssh", type: "security_group_rule" do
+  name "PuppetClient_ssh_rule"
+  description "Allow ssh access."
+  source_type "cidr_ips"
+  security_group @puppetclient_sec_group
+  protocol "tcp"
+  direction "ingress"
+  cidr_ips "0.0.0.0/0"
+  protocol_details do {
+    "start_port" => "22",
+    "end_port" => "22"
+  } end
+end
+
+resource "master_server", type: "server" do
+  name "Puppet Master Server"
+  condition $launchMaster
+  cloud map($cat_map, "globals", "cloud")
+  instance_type  map($cat_map, "globals", "instance_type")
+  server_template find(map($cat_map, "globals", "master_servertemplate"))
+  ssh_key map($cat_map, "globals", "ssh_key")
+  security_groups @puppetmaster_sec_group
   inputs do {
-    "WEBTEXT" => join(["text:", $param_webtext])
+    "PUPPET_MASTER_DNS_NAMES" => "env:Puppet Master Server:PUBLIC_IP"
+  } end
+end
+
+resource "client_server", type: "server" do
+  name "Puppet Client Server"
+  cloud map($cat_map, "globals", "cloud")
+  instance_type  map($cat_map, "globals", "instance_type")
+  server_template find(map($cat_map, "globals", "client_servertemplate"))
+  ssh_key map($cat_map, "globals", "ssh_key")
+  security_groups @puppetclient_sec_group
+  inputs do {
+    "puppet/client/puppet_master_address" => "env:Puppet Master Server:PUBLIC_IP"
   } end
 end
 
@@ -192,26 +225,14 @@ end
 ## Operations #
 ###############
 
-# Allows user to modify the web page text.
-operation "Update Web Page" do
-  description "Modify the web page text."
-  definition "update_webtext"
-end
+# No operations at this time
 
 
 ##############
 # Definitions#
 ##############
 
-#
-# Modify the web page text
-#
-define update_webtext(@web_server, $map_account, $param_webtext) do
-  task_label("Update Web Page")
-  $hello_world_script = map( $map_account, "training_account", "hello_world_script" )
-#  call run_script(@web_server,  join(["/api/right_scripts/", $hello_world_script]), {WEBTEXT: "text:"+$param_webtext}) 
-call run_executable(@web_server, {inputs: {WEBTEXT: "text:"+$param_webtext}, rightscript: {name: "helloworld_rightscript"}}) retrieve @task
-end
+# No definitions at this time
 
 
 

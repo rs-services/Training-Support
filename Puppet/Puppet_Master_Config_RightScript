@@ -9,15 +9,15 @@
 #
 # How to Use:
 #	Create a new RightScript in RightScale. 
-#	Name it: "Puppet Master Configurator" (this matches the name used in the CAT that deploys this as well)
+#	Name it: "Puppet Master Configurator" 
 #	Place the contents of this file in the the RightScript.
 #	Identify variables.
 #		This should identify the PUPPET_MASTER_DNS_NAMES variable
 #		The default value should be env:PUBLIC_IP
 #	Import Base Server Template for Linux
 #	Clone the Base Server Template for Linux
-#		Name it: "Puppet Master Test Server" (again matches the CAT)
-#		Modify the Scripts and add this RightScript to the Boot or Operational Sequence.
+#		Name it: "Puppet Master Test Server" (matches what the CAT is expecting to find)
+#		Modify the Scripts and add this RightScript to the Boot Sequence.
 #	Launch a server based on this newly created Puppet Master ServerTemplate.
 #
 #	Now you can use the "official" Puppet Client Beta ServerTemplate from the MultiCloud Marketplace.
