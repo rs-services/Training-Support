@@ -1,0 +1,80 @@
+#!/bin/sh
+#
+# Function:
+#	Does a super basic install of a Puppet Master.
+#	It also creates a super basic manifest that installs nginx on clients so you can see that it works.
+#
+# Caveats:
+#	It is only CentOS compatible. But since the default image used by the underlying ServerTemplate is CentOS, it's safe.
+#
+# How to Use:
+#	Create a new RightScript in RightScale. 
+#	Name it: "Puppet Master Configurator" (this matches the name used in the CAT that deploys this as well)
+#	Place the contents of this file in the the RightScript.
+#	Identify variables.
+#		This should identify the PUPPET_MASTER_DNS_NAMES variable
+#		The default value should be env:PUBLIC_IP
+#	Import Base Server Template for Linux
+#	Clone the Base Server Template for Linux
+#		Name it: "Puppet Master Test Server" (again matches the CAT)
+#		Modify the Scripts and add this RightScript to the Boot or Operational Sequence.
+#	Launch a server based on this newly created Puppet Master ServerTemplate.
+#
+#	Now you can use the "official" Puppet Client Beta ServerTemplate from the MultiCloud Marketplace.
+#	When launching the client server, set the "Puppet Master FQDN" input to ENV:PUBLIC_IP of Puppet Master server launched above.
+#
+
+echo "###### NOT FOR PRODUCTION #########"
+echo "### This Puppet Master install is not production grade."
+echo "### It should only be used for testing."
+
+puppet_config_file=/etc/puppet/puppet.conf
+puppet_config_backup=${puppet_config_file}.bak
+
+test_manifest="/etc/puppet/manifests/site.pp"
+
+# Install puppet master or agent
+case "$RS_DISTRO" in
+  ubuntu)
+    echo ">>> Ubuntu not supported at this time."
+    ;;
+  centos|amazonami|redhat*)
+    echo ">>> Installing puppet-server."
+    yum install -y puppet-server
+    ;;
+  *)
+    logger -s -t RightScale "RS_DIST ($RS_DISTRO) is not supported at this time. exiting..."
+    exit 1
+    ;;
+esac
+
+
+echo ">>> Setting up Puppet master"
+
+if [ ! -f ${puppet_config_backup} ]
+then
+  echo ">>> Making backup file, ${puppet_config_backup}"
+  cp ${puppet_config_file} ${puppet_config_backup}
+fi
+
+# set up the dns names for the certificate.
+echo ">>> dns_alt_names = $PUPPET_MASTER_DNS_NAMES"
+echo ">>> autosign = true"
+sed "s/\[agent\]/\tdns_alt_names = $PUPPET_MASTER_DNS_NAMES\n\[master\]\n\tautosign = true\n\n\[agent\]/" ${puppet_config_backup} > ${puppet_config_file}
+
+# Restarting puppet server
+service puppetmaster restart
+
+# Create a basic manifest for testing
+echo ">>> Setting up basic nginx manifest for Puppet clients."
+
+cat > ${test_manifest} <<EOF
+package { 'nginx':
+    ensure => present,
+}
+
+service { 'nginx':
+    ensure  => running,
+    require => Package['nginx'],
+}
+EOF

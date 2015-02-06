@@ -25,14 +25,11 @@
 #RightScale Cloud Application Template (CAT)
 
 # DESCRIPTION
-# Super basic CAT file to introduce Self-Service and CATs.
-# Uses a "Hello World Web Server" server template which is simply a Base Linux ServerTemplate with
-# a script that installs httpd and drops in an index.html file with a line of text defined by an input.
+# CAT that deploys a Puppet Master server (optionally) and a Puppet Client server.
 #
 # PREREQUISITES and CAT PREPARATION:
-#   Server Template: A server template called "Hello World Web Server" must exist for the account being used.
-#     This server template must have a rightscript called helloworld_rightscript that can be invoked.
-#     The server template must be able to be deployed to the clouds specified in the map_cloud mapping below.
+#   Server Template: 
+#     See the Puppet_Master_Config_RightScript found here: 
 #   SSH Key:
 #     The account must have an SSH key named "default"
 #       You do not need to know the private key for "default" since you can use your personal SSH key for any access needed.

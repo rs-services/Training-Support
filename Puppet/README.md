@@ -1,0 +1,1 @@
+Support material for a training module related to using RightScale and Puppet.
