@@ -78,14 +78,12 @@ end
 # Inputs provided by users when launching the cloud application.
 ##############
 
-# Which cloud?
-# Maps to specific cloud below.
-parameter "param_deploy_master" do 
+# If the user is not deploying a master server, then an IP or FQDN for the existing master needs to be provided.
+parameter "param_master_address" do
   category "Deployment Options"
-  label "Do you want to deploy a Puppet Master server?" 
-  type "string" 
-  allowed_values "Yes", "No"
-  default "No"
+  label "If you already have a Puppet Master server you want to use, enter the IP address or FQDN of that server here:"
+  type "string"
+  default "NA"
 end
 
 ##############
@@ -95,7 +93,7 @@ end
 # Checks if being deployed in AWS.
 # This is used to decide whether or not to pass an SSH key and security group when creating the servers.
 condition "launchMaster" do
-  equals?($param_deploy_master, "Yes")
+  equals?($param_master_address, "NA")
 end
 
 
@@ -219,7 +217,7 @@ resource "client_server", type: "server" do
   ssh_key map($cat_map, "globals", "ssh_key")
   security_groups @puppetclient_sec_group
   inputs do {
-    "puppet/client/puppet_master_address" => "env:Puppet Master Server:PUBLIC_IP"
+    "puppet/client/puppet_master_address" => switch($launchMaster, "env:Puppet Master Server:PUBLIC_IP", join(["text:",$param_master_address]))
   } end
 end
 
@@ -228,14 +226,14 @@ end
 ## Operations #
 ###############
 
-# No operations at this time
+# No operations at this time.
 
 
 ##############
 # Definitions#
 ##############
 
-# No definitions at this time
+# No definitions at this time.
 
 
 
