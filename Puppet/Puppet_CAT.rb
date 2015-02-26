@@ -40,7 +40,8 @@
 
 name "Puppet Test Environment"
 rs_ca_ver 20131202
-short_description "![Puppet](http://upload.wikimedia.org/wikipedia/en/c/c5/Puppet_Labs_Logo.png)\n
+#short_description "![Puppet](http://upload.wikimedia.org/wikipedia/en/c/c5/Puppet_Labs_Logo.png)\n
+short_description "![Puppet](http://thias.marmotte.net/uploads/2013/04/puppet.png)\n
 Deploys a Puppet Clent server and optionally a Puppet Master server."
 long_description "The Puppet Master is just for testing purposes. It is not production hardened.\n
 The Puppet Client server grabs a basic nginx manifest from the master.\n
@@ -51,17 +52,6 @@ So you can easily see if things worked as expected by pointing your browser at t
 ##############
 
 # This CAT is more about Puppet than multiple clouds and stuff.
-# But it's still nice to have a single place to manage some of these settings.
-#define main() do 
-#  
-#  $$cat_cloud = 'us-east-1'
-#  $$cat_instance_type = 'm1.small'
-#  $$cat_ssh_key = 'default'
-#  $$master_servertemplate = 'Puppet Master Test Server'
-#  $$client_servertemplate = 'Puppet Client Beta (v13.5)'
-#  
-#end
-
 mapping "cat_map" do {
   "globals" => {
     "ssh_key" => "default",
