@@ -58,7 +58,7 @@ mapping "cat_map" do {
     "cloud" => "us-east-1",
     "instance_type" => "m1.small",
     "master_servertemplate" => "Puppet Master Test Server",
-    "client_servertemplate" => "Puppet Client Beta (v13.5)"
+    "client_servertemplate" => "Puppet Client Beta"
   },
 }
 end
