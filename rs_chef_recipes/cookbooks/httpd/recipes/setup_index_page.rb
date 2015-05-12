@@ -10,7 +10,7 @@
 # Make sure apache is installed first
 include_recipe "httpd::install_httpd"
 
-template "/var/www/index.html" do
+template "/var/www/html/index.html" do
   source "index.html.erb"
   mode 0644
   action :create
