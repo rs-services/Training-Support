@@ -1,0 +1,18 @@
+#!/bin/bash
+
+# This is a shell script that simply returns a random number.
+# It is an attachment to the rightscript that installs the shell script.
+
+# Check inputs
+if [ $# -ne 1 ]
+then
+    echo "USAGE: $0 SERVER_UUID"
+    exit 1
+fi
+
+# Every 20 seconds check if the site has the expected text
+while sleep 20
+do
+    currtime=`date +%s`
+    echo "PUTVAL ${1}/training_monitor/gauge-Random ${currtime}:$RANDOM"
+done
