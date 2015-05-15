@@ -11,16 +11,23 @@ fi
 my_token_endpoint=${1}
 my_refresh_token=${2}
 
+# We tuck away our shard number for later use
+echo ${my_token_endpoint} | cut -d"-" -f2 | cut -d"." -f1 > .my_shard
+
 echo "##########"
 echo "Here is the curl command you are sending"
 cat << EOF 
-curl -s --include \
--H "X-API-Version:1.5" \
---request POST "$my_token_endpoint" \
--d "grant_type=refresh_token" \
--d "refresh_token=$my_refresh_token"
+curl -s --include 
+    -H "X-API-Version:1.5" 
+    --request POST "$my_token_endpoint" 
+    -d "grant_type=refresh_token" 
+    -d "refresh_token=$my_refresh_token"
 EOF
+echo ""
 echo "#########"
+echo ""
+echo "Hit return to continue ..."
+read anykey
 echo ""
 
 curl -s --include \
@@ -28,3 +35,6 @@ curl -s --include \
         --request POST "$my_token_endpoint" \
         -d "grant_type=refresh_token" \
         -d "refresh_token=$my_refresh_token"
+        
+echo ""
+echo ""
