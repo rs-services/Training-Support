@@ -37,7 +37,7 @@
 #     The account must have an SSH key named "default"
 #       You do not need to know the private key for "default" since you can use your personal SSH key for any access needed.
 
-name 'Hello World Web Server - CHANGEME'
+name 'CHANGEME - Hello World Web Server'
 rs_ca_ver 20131202
 short_description 'Automates the deployment of a simple single VM server.'
 
