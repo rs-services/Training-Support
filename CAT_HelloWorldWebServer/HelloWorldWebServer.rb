@@ -201,6 +201,12 @@ operation "Update Web Page" do
   definition "update_webtext"
 end
 
+# Not actually needed but included to show an example of "overwriting" the built-in terminate operation.
+# The same sort of thing can be done with "launch" as well.
+operation "terminate" do
+  description "Terminate the server and security group"
+  definition "terminate_resources"
+end
 
 ##############
 # Definitions#
@@ -212,11 +218,17 @@ end
 define update_webtext(@web_server, $map_account, $param_webtext) do
   task_label("Update Web Page")
   $hello_world_script = map( $map_account, "training_account", "hello_world_script" )
-#  call run_script(@web_server,  join(["/api/right_scripts/", $hello_world_script]), {WEBTEXT: "text:"+$param_webtext}) 
-call run_executable(@web_server, {inputs: {WEBTEXT: "text:"+$param_webtext}, rightscript: {name: "helloworld_rightscript"}}) retrieve @task
+  #  call run_script(@web_server,  join(["/api/right_scripts/", $hello_world_script]), {WEBTEXT: "text:"+$param_webtext}) 
+  call run_executable(@web_server, {inputs: {WEBTEXT: "text:"+$param_webtext}, rightscript: {name: "helloworld_rightscript"}}) retrieve @task
 end
 
-
+# 
+# Terminate the server and delete the security group.
+# 
+define terminate_resources(@web_server, @sec_group) do
+  delete(@web_server)
+  delete(@sec_group)
+end
 
 ########## HELPER FUNCTIONS ############
 ## Helper definition, runs a script on given server, waits until script completes or fails
