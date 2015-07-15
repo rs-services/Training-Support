@@ -134,7 +134,7 @@ end
 output "server_url" do
   label "Server URL" 
   category "Connect"
-  default_value join(["http://", @web_server.public_ip_address])
+  default_value join(["http://", @web_server.private_ip_address])
   description "Access the web server page."
 end
 
@@ -147,6 +147,7 @@ resource "sec_group", type: "security_group" do
   name join(["HelloWorldSecGrp-",@@deployment.href])
   description "Hello World web server security group."
   cloud map( $map_cloud, $param_location, "cloud" )
+  network_href "/api/networks/E3118NLDQQGGH"
 end
 
 resource "sec_group_rule_http", type: "security_group_rule" do
@@ -185,6 +186,7 @@ resource "web_server", type: "server" do
   server_template find("Hello World Web Server")
   ssh_key switch($inAWS, map($map_account, "training_account", "ssh_key"), null)
   security_groups @sec_group
+  subnets find(resource_uid: 'subnet-7eb8e638', network_href: '/api/networks/E3118NLDQQGGH') 
   inputs do {
     "WEBTEXT" => join(["text:", $param_webtext])
   } end
