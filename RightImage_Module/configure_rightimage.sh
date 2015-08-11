@@ -9,8 +9,7 @@ apt-key add /tmp/rightscale.pub
 rm -rf /tmp/rightscale.pub
 
 # Pin the Collectd Version
-cat <<EOF
- EOF > /etc/apt/preferences.d/rightscale-collectd-pin-1001
+cat << EOF > /etc/apt/preferences.d/rightscale-collectd-pin-1001
 # Collectd 5 is not currently supported by the RightScale monitoring servers
 # Pin to previous version from "precise" to avoid issues. These packages are
 # available from http://mirror.rightscale.com/rightscale_software_ubuntu
@@ -25,21 +24,18 @@ Pin-Priority: 1001
 EOF
 
 # Add the RightLink Repository to Apt
-cat <<EOF
- EOF > /etc/apt/sources.list.d/rightlink.list
+cat << EOF > /etc/apt/sources.list.d/rightlink.list
 # RightLink Repository
 deb [arch=amd64] http://mirror.rightscale.com/rightlink/apt/ trusty main
 EOF
 
 # Add the RightScale Extra Repository to Apt 
-cat <<EOF
- EOF > /etc/apt/sources.list.d/rightscale_extra.sources.list
+cat << EOF > /etc/apt/sources.list.d/rightscale_extra.sources.list
 deb http://island10.rightscale.com/rightscale_software_ubuntu/latest trusty main
 EOF
 
 # Setup RightScale specific settings
-cat <<EOF
- EOF > /etc/cloud/cloud.cfg.d/20_rightscale.cfg
+cat << EOF > /etc/cloud/cloud.cfg.d/20_rightscale.cfg
 # RightScale-specific settings
 apt_update: false
 apt_upgrade: false
