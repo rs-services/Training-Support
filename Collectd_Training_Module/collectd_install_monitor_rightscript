@@ -12,7 +12,7 @@
 case "$RS_DISTRO" in
   ubuntu)
     config="/etc/collectd/collectd.conf"
-    plugin_dir="/etc/collectd/conf"
+    plugin_dir="/etc/collectd/plugins"
     lib_dir="/usr/lib/collectd"
     ;;
   centos)
@@ -47,13 +47,13 @@ cat << EOF > $plugin_dir/$plugin_script_name.conf
 EOF
 
 # Ensure the exec plugin is enabled in the main collectd configuration file.
-exec_loaded=$(grep '^LoadPlugin exec' $config -c || true)
+#exec_loaded=$(grep '^LoadPlugin exec' $config -c || true)
 
-if [ $exec_loaded = "0" ]; then
-  echo "The collectd exec plugin is not loaded, adding it to collectd.conf"
+#if [ $exec_loaded = "0" ]; then
+#  echo "The collectd exec plugin is not loaded, adding it to collectd.conf"
   # Make sure we add it BEFORE the include directive!
-  sed -i '/#this is where other configs go/ a\LoadPlugin exec' $config
-fi
+#  echo "LoadPlugin exec" >> $config
+#fi
 echo "Done"
 echo
   
