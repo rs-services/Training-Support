@@ -41,6 +41,7 @@ echo
 # Create the collectd configuration
 echo "Configuring collectd..."
 cat << EOF > $plugin_dir/$plugin_script_name.conf
+LoadPlugin Exec
 <Plugin exec>
   Exec "rightscale" "$lib_dir/plugins/$plugin_script_name" "$SERVER_UUID"
 </Plugin>
