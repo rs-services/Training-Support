@@ -77,6 +77,19 @@ parameter "param_webtext" do
   default "Hello World!"
 end
 
+# Project ID for the application
+parameter "param_projectid" do
+  category "Project Options"
+  label "Project ID"
+  type "string"
+  description "Project Id for the application."
+  min_length 8
+  max_length 24
+  # This enforces a stricter windows password complexity in that all 4 elements are required as opposed to just 3.
+  allowed_pattern "^[0-9a-zA-Z]+$"
+  constraint_description "Must be alphanumeric string of 8 to 24 characters."
+end
+
 
 
 ##############
@@ -201,33 +214,29 @@ operation "Update Web Page" do
   definition "update_webtext"
 end
 
-# Not actually needed but included to show an example of "overwriting" the built-in terminate operation.
-# The same sort of thing can be done with "launch" as well.
-operation "terminate" do
-  description "Terminate the server and security group"
-  definition "terminate_resources"
+operation "enable" do
+  description "Post launch actions"
+  definition "post_launch"
 end
 
 ##############
 # Definitions#
 ##############
 
+# 
+# Terminate the server and delete the security group.
+# 
+define post_launch(@web_server, $param_projectid) do
+  rs.tags.multi_add(resource_hrefs: [@web_server.current_instance().href], tags: [join(["project:id=",$param_projectid])])
+end
+
+
 #
 # Modify the web page text
 #
 define update_webtext(@web_server, $map_account, $param_webtext) do
   task_label("Update Web Page")
-  $hello_world_script = map( $map_account, "training_account", "hello_world_script" )
-  #  call run_script(@web_server,  join(["/api/right_scripts/", $hello_world_script]), {WEBTEXT: "text:"+$param_webtext}) 
   call run_executable(@web_server, {inputs: {WEBTEXT: "text:"+$param_webtext}, rightscript: {name: "helloworld_rightscript"}}) retrieve @task
-end
-
-# 
-# Terminate the server and delete the security group.
-# 
-define terminate_resources(@web_server, @sec_group) do
-  delete(@web_server)
-  delete(@sec_group)
 end
 
 ########## HELPER FUNCTIONS ############
