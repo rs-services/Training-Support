@@ -224,10 +224,12 @@ end
 ##############
 
 # 
-# Terminate the server and delete the security group.
+# Perform custom enable operation.
 # 
-define post_launch(@web_server, $param_projectid) do
-  rs.tags.multi_add(resource_hrefs: [@web_server.current_instance().href], tags: [join(["project:id=",$param_projectid])])
+define post_launch($param_projectid) do
+  #Add project id tag to the server
+  $tags=[join(["project:id=",$param_projectid])]
+  rs.tags.multi_add(resource_hrefs: @@deployment.servers().current_instance().href[], tags: $tags)
 end
 
 
