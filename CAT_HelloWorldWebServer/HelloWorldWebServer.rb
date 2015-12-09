@@ -85,9 +85,9 @@ parameter "param_projectid" do
   description "Project Id for the application."
   min_length 8
   max_length 24
-  # This enforces a stricter windows password complexity in that all 4 elements are required as opposed to just 3.
   allowed_pattern "^[0-9a-zA-Z]+$"
   constraint_description "Must be alphanumeric string of 8 to 24 characters."
+  default "Project1234"  
 end
 
 
