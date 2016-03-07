@@ -12,7 +12,11 @@
 case "$RS_DISTRO" in
   ubuntu)
     config="/etc/collectd/collectd.conf"
-    plugin_dir="/etc/collectd/conf"
+    plugin_dir="/etc/collectd/plugins"
+    if [ -d /etc/collectd/conf ]  # Then we appear to be on a variation of an Ubuntu deploy that uses a different plugin_dir
+    then 
+      plugin_dir="/etc/collectd/conf"
+    fi
     lib_dir="/usr/lib/collectd"
     ;;
   centos)
@@ -21,8 +25,8 @@ case "$RS_DISTRO" in
     lib_dir="/usr/lib/collectd"
     ;;
   *)
-    logger -s -t RightScale "Page checks not supported for platform: $RS_DISTRO. exiting..."
-    exit 0
+    logger -s -t RightScale "RS_DISTRO of type $RS_DISTRO is not supported. This script is not supported on RightLink 10 servers. Exiting ...."
+    exit 1
     ;;
 esac
 
@@ -41,19 +45,12 @@ echo
 # Create the collectd configuration
 echo "Configuring collectd..."
 cat << EOF > $plugin_dir/$plugin_script_name.conf
+LoadPlugin exec
 <Plugin exec>
   Exec "rightscale" "$lib_dir/plugins/$plugin_script_name" "$SERVER_UUID"
 </Plugin>
 EOF
 
-# Ensure the exec plugin is enabled in the main collectd configuration file.
-exec_loaded=$(grep '^LoadPlugin exec' $config -c || true)
-
-if [ $exec_loaded = "0" ]; then
-  echo "The collectd exec plugin is not loaded, adding it to collectd.conf"
-  # Make sure we add it BEFORE the include directive!
-  sed -i '/#this is where other configs go/ a\LoadPlugin exec' $config
-fi
 echo "Done"
 echo
   
