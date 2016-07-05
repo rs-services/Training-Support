@@ -45,7 +45,6 @@ short_description 'Automates the deployment of a simple single VM server.'
 # Imports        #
 ##################
 
-import "common/cat_training_resources"
 import "common/cat_training_parameters"
 import "common/cat_training_mappings"
 import "common/cat_training_helper_functions"
@@ -92,86 +91,118 @@ end
 # RESOURCES  #
 ##############
 
-resource "ssh_key", type: "ssh_key" do
-  like $cat_training_resources.ssh_key 
+resource "web_server", type: "server" do
+  name join(["WebServer-",@@deployment.href])
+  cloud map( $map_cloud, $param_location, "cloud" )
+  instance_type  map( $map_instance_type, map( $map_cloud, $param_location,"provider"), $param_performance)
+  server_template find("Training Hello World Web Server")  # See ServerTemplate Training Module
+  ssh_key @ssh_key
+  security_groups @sec_group
+  inputs do {
+    "WEBTEXT" => join(["text:", $param_webtext])
+  } end
 end
 
-#resource "sec_group", type: "security_group" do
-#  like $cat_training_resources.sec_group 
-#end
-#
-#resource "sec_group_rule_http", type: "security_group_rule" do
-#  like $cat_training_resources.sec_group_rule_http 
-#end
-#
-#resource "sec_group_rule_ssh", type: "security_group_rule" do
-#  like $cat_training_resources.sec_group_rule_ssh 
-#end
+resource "ssh_key", type: "ssh_key" do
+  name join(["sshkey_", last(split(@@deployment.href,"/"))])
+  cloud map($map_cloud, $param_location, "cloud")
+end
+
+resource "sec_group", type: "security_group" do
+  name join(["WebServerSecGrp-",@@deployment.href])
+  description "Hello World web server security group."
+  cloud map( $map_cloud, $param_location, "cloud" )
+end
+
+resource "sec_group_rule_http", type: "security_group_rule" do
+  name join(["WebServerHttp-",@@deployment.href])
+  description "Allow HTTP access."
+  source_type "cidr_ips"
+  security_group @sec_group
+  protocol "tcp"
+  direction "ingress"
+  cidr_ips "0.0.0.0/0"
+  protocol_details do {
+    "start_port" => "80",
+    "end_port" => "80"
+  } end
+end
+
+resource "sec_group_rule_ssh", type: "security_group_rule" do
+  name join(["WebServerSsh-",@@deployment.href])
+  description "Allow SSH access."
+  source_type "cidr_ips"
+  security_group @sec_group
+  protocol "tcp"
+  direction "ingress"
+  cidr_ips "0.0.0.0/0"
+  protocol_details do {
+    "start_port" => "22",
+    "end_port" => "22"
+  } end
+end
 
 
-#resource "web_server", type: "server" do
-#  like $cat_training_resources.web_server 
-#end
-#
+
+##############
+# CONDITIONS #
+##############
+
+# Checks if being deployed in AWS.
+# This is used to decide whether or not to pass an SSH key and security group when creating the servers.
+condition "inAWS" do
+  equals?(map($map_cloud, $param_location,"provider"), "AWS")
+end
+
+
+##############
+# OUTPUTS    #
+##############
+
+output "server_url" do
+  label "Server URL" 
+  category "Connect"
+  default_value join(["http://", @web_server.public_ip_address])
+  description "Access the web server page."
+end
+
+
 ###############
-## CONDITIONS #
+## Operations #
 ###############
+
+# Allows user to modify the web page text.
+operation "update_web_page" do
+  label "Update Web Page"
+  description "Modify the web page text."
+  definition "update_webtext"
+end
+
+operation "enable" do
+  description "Post launch actions"
+  definition "post_launch"
+end
+
+##############
+# Definitions#
+##############
+
+# 
+# Perform custom enable operation.
+# 
+define post_launch($param_projectid) do
+  #Add project id tag to the server
+  $tags=[join(["project:id=",$param_projectid])]
+  rs_cm.tags.multi_add(resource_hrefs: @@deployment.servers().current_instance().href[], tags: $tags)
+end
+
+
 #
-## Checks if being deployed in AWS.
-## This is used to decide whether or not to pass an SSH key and security group when creating the servers.
-#condition "inAWS" do
-#  equals?(map($map_cloud, $param_location,"provider"), "AWS")
-#end
+# Modify the web page text
 #
-#
-###############
-## OUTPUTS    #
-###############
-#
-#output "server_url" do
-#  label "Server URL" 
-#  category "Connect"
-#  default_value join(["http://", @web_server.public_ip_address])
-#  description "Access the web server page."
-#end
-#
-#
-################
-### Operations #
-################
-#
-## Allows user to modify the web page text.
-#operation "update_web_page" do
-#  label "Update Web Page"
-#  description "Modify the web page text."
-#  definition "update_webtext"
-#end
-#
-#operation "enable" do
-#  description "Post launch actions"
-#  definition "post_launch"
-#end
-#
-###############
-## Definitions#
-###############
-#
-## 
-## Perform custom enable operation.
-## 
-#define post_launch($param_projectid) do
-#  #Add project id tag to the server
-#  $tags=[join(["project:id=",$param_projectid])]
-#  rs.tags.multi_add(resource_hrefs: @@deployment.servers().current_instance().href[], tags: $tags)
-#end
-#
-#
-##
-## Modify the web page text
-##
-#define update_webtext(@web_server, $param_webtext) do
-#  task_label("Update Web Page")
-#  call run_script(@web_server, "training_helloworld_update_rightscript", {WEBTEXT: "text:"+$param_webtext})
-#end
+define update_webtext(@web_server, $param_webtext) do
+  task_label("Update Web Page")
+  call run_script(@web_server, "training_helloworld_update_rightscript", {WEBTEXT: "text:"+$param_webtext})
+end
 
 

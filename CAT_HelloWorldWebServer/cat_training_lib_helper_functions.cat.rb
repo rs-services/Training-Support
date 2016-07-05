@@ -8,7 +8,7 @@ define run_script(@server, $script_name, $inputs_hash) do
   
   task_label("In run_script")
     
-  @script = rs.right_scripts.get(filter: join(["name==",$script_name]))
+  @script = rs_cm.right_scripts.get(filter: join(["name==",$script_name]))
   $right_script_href=@script.href
 
   @running_servers = select(@web_tier.current_instances(), {"state":"operational"})

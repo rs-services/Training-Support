@@ -11,9 +11,9 @@ package "common/cat_training_mappings"
 # Maps the user's selected performance level into a specific instance type.
 mapping "map_instance_type" do {
   "AWS" => {
-    "low" => "m1.small",  
-    "medium" => "m1.medium", 
-    "high" => "c3.large", 
+    "low" => "m3.medium",  
+    "medium" => "m3.large", 
+    "high" => "m3.xlarge", 
   },
 }
 end
