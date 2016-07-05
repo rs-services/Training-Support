@@ -85,7 +85,7 @@ end
 ##############
 
 resource "web_server", type: "server" do
-  name join(["WebServer-",@@deployment.href])
+  name join(["WebServer-",last(split(@@deployment.href,"/"))])
   cloud map( $map_cloud, $param_location, "cloud" )
   instance_type  map( $map_instance_type, map( $map_cloud, $param_location,"provider"), $param_performance)
   server_template # See find() as defined here: http://docs.rightscale.com/ss/reference/cat/v20160622/index.html#built-in-methods-and-other-keywords
@@ -197,7 +197,7 @@ end
 define update_webtext(@web_server, $param_webtext) do
   task_label("Update Web Page")
   # See the cat_traininglib_helper_functions.cat.rb for this function
-  call run_script(@web_server, "YOUR_UPDATE_WEBTEXT_SCRIPT_NAME", {WEBTEXT: "text:"+$param_webtext})
+  call cat_training_helper_functions.run_script(@web_server, "YOUR_UPDATE_WEBTEXT_SCRIPT_NAME", {WEBTEXT: "text:"+$param_webtext})
 end
 
 

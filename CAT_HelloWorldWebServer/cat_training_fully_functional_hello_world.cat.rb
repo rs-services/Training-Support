@@ -92,7 +92,7 @@ end
 ##############
 
 resource "web_server", type: "server" do
-  name join(["WebServer-",@@deployment.href])
+  name join(["WebServer-",last(split(@@deployment.href,"/"))])
   cloud map( $map_cloud, $param_location, "cloud" )
   instance_type  map( $map_instance_type, map( $map_cloud, $param_location,"provider"), $param_performance)
   server_template find("Training Hello World Web Server")  # See ServerTemplate Training Module
@@ -202,7 +202,7 @@ end
 #
 define update_webtext(@web_server, $param_webtext) do
   task_label("Update Web Page")
-  call run_script(@web_server, "training_helloworld_update_rightscript", {WEBTEXT: "text:"+$param_webtext})
+  call cat_training_helper_functions.run_script(@web_server, "training_helloworld_update_rightscript", {WEBTEXT: "text:"+$param_webtext})
 end
 
 
