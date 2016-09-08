@@ -53,10 +53,10 @@ resource "sec_group_rule_ssh", type: "security_group_rule" do
 end
 
 resource "web_server", type: "server" do
-  name join(["WebServer-",@@deployment.href])
+  name join(["WebServer-", last(split(@@deployment.href, "/"))])
   cloud map( $map_cloud, $param_location, "cloud" )
   instance_type  map( $map_instance_type, map( $map_cloud, $param_location,"provider"), $param_performance)
-  server_template find("Training Hello World Web Server")  # See ServerTemplate Training Module
+  server_template find("Training Hello World Web ServerTemplate")  # See ServerTemplate Training Module
   ssh_key @ssh_key
   security_groups @sec_group
   inputs do {

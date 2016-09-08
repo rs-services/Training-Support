@@ -22,17 +22,26 @@
 #THE SOFTWARE.
 
 
-#RightScale Cloud Application Template (CAT)
-
 # DESCRIPTION
 # Basic CAT file to introduce Self-Service and CATs.
-# Uses a "Hello World Web Server" server template which is simply a Base Linux ServerTemplate with
-# a script that installs httpd and drops in an index.html file with a line of text defined by an input.
+# Launches a basic "Hello World" web server.
+#
+# PREREQUISITES
+# The student has gone through the ServerTemplate exercise and created a basic Hello World ServerTemplate.
+# Or the instructor has provided the ServerTemplate.
+#
+# REQUIRED MODIFICATIONS:
+#   - Specify a name for the CAT (around line 36)
+#   - Specify the name of your Hello World ServerTemplate in the server declarateion (around line 98)
+#   - Update the update_webtext() definition to use your web text setting RightScript you developed for the Hello World ServerTemplate (around line 177)
+#   
+# FILES LOCATION:
+#   This CAT file and related import files can be found at: https://github.com/rs-services/Training-Support/tree/master/CAT_HelloWorldWebServer
 #
 
 name # See http://docs.rightscale.com/ss/reference/cat/v20160622/index.html#fields
 rs_ca_ver 20160622
-short_description 'Automates the deployment of a simple single VM server.'
+short_description 'Automates the deployment of a simple web server.'
 
 ##################
 # Imports        #
@@ -41,6 +50,7 @@ short_description 'Automates the deployment of a simple single VM server.'
 import "common/cat_training_parameters"
 import "common/cat_training_mappings"
 import "common/cat_training_helper_functions"
+import "common/cat_training_resources"
 
 ##############
 # PARAMETERS 
@@ -85,68 +95,33 @@ end
 ##############
 
 resource "web_server", type: "server" do
-  name join(["WebServer-",last(split(@@deployment.href,"/"))])
-  cloud map( $map_cloud, $param_location, "cloud" )
-  instance_type  map( $map_instance_type, map( $map_cloud, $param_location,"provider"), $param_performance)
+  like @cat_training_resources.web_server
   server_template # See find() as defined here: http://docs.rightscale.com/ss/reference/cat/v20160622/index.html#built-in-methods-and-other-keywords
                   # See server resource declaration info here: http://docs.rightscale.com/ss/reference/cat/v20160622/ss_CAT_resources.html#resources-server
-  ssh_key @ssh_key
-  security_groups @sec_group
-  inputs do {
-    "WEBTEXT" => join(["text:", $param_webtext])
-  } end
 end
 
 resource "ssh_key", type: "ssh_key" do
-  name join(["sshkey_", last(split(@@deployment.href,"/"))])
-  cloud map($map_cloud, $param_location, "cloud")
+  like @cat_training_resources.ssh_key
 end
 
 resource "sec_group", type: "security_group" do
-  name join(["WebServerSecGrp-",@@deployment.href])
-  description "Hello World web server security group."
-  cloud map( $map_cloud, $param_location, "cloud" )
+  like @cat_training_resources.sec_group
 end
 
 resource "sec_group_rule_http", type: "security_group_rule" do
-  name join(["WebServerHttp-",@@deployment.href])
-  description "Allow HTTP access."
-  source_type "cidr_ips"
-  security_group @sec_group
-  protocol "tcp"
-  direction "ingress"
-  cidr_ips "0.0.0.0/0"
-  protocol_details do {
-    "start_port" => "80",
-    "end_port" => "80"
-  } end
+  like @cat_training_resources.sec_group_rule_http
 end
 
 resource "sec_group_rule_ssh", type: "security_group_rule" do
-  name join(["WebServerSsh-",@@deployment.href])
-  description "Allow SSH access."
-  source_type "cidr_ips"
-  security_group @sec_group
-  protocol "tcp"
-  direction "ingress"
-  cidr_ips "0.0.0.0/0"
-  protocol_details do {
-    "start_port" => "22",
-    "end_port" => "22"
-  } end
+  like @cat_training_resources.sec_group_rule_ssh
 end
-
 
 
 ##############
 # CONDITIONS #
 ##############
 
-# Checks if being deployed in AWS.
-# This is used to decide whether or not to pass an SSH key and security group when creating the servers.
-condition "inAWS" do
-  equals?(map($map_cloud, $param_location,"provider"), "AWS")
-end
+# NONE at this time
 
 
 ##############
@@ -194,10 +169,11 @@ end
 #
 # Modify the web page text
 #
-define update_webtext(@web_server, $param_webtext) do
+define update_webtext($param_webtext) do
   task_label("Update Web Page")
+  
+  @web_servers = rs_cm.servers.get(filter: [ "deployment_href=="+to_s(@@deployment.href) ])
   # See the cat_traininglib_helper_functions.cat.rb for this function
-  call cat_training_helper_functions.run_script(@web_server, "YOUR_UPDATE_WEBTEXT_SCRIPT_NAME", {WEBTEXT: "text:"+$param_webtext})
+  call cat_training_helper_functions.run_script(@web_servers, "YOUR_UPDATE_RIGHTSCRIPT_GOES_HERE", {WEBTEXT: "text:"+$param_webtext})
 end
-
 

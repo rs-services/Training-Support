@@ -26,20 +26,22 @@
 
 # DESCRIPTION
 # Basic CAT file to introduce Self-Service and CATs.
-# Uses a "Hello World Web Server" server template which is simply a Base Linux ServerTemplate with
-# a script that installs httpd and drops in an index.html file with a line of text defined by an input.
+# Launches a basic "Hello World" web server.
 #
 # PREREQUISITES and CAT PREPARATION:
-#   Server Template: A server template called "Hello World Web Server" must exist for the account being used.
-#     This server template must have a rightscript called helloworld_rightscript that can be invoked.
-#     The server template must be able to be deployed to the clouds specified in the map_cloud mapping below.
-#   SSH Key:
-#     The account must have an SSH key named "default"
-#       You do not need to know the private key for "default" since you can use your personal SSH key for any access needed.
+#   Server Template: A server template called "Training Hello World Web ServerTemplate" must exist for the account being used.
+#     This server template must have a rightscript called "Training Hello World Web RightScript" that can be invoked.
+#     The server template must be able to be deployed to the clouds specified in the map_cloud mapping referenced below.
+#   The import package files need to be uploaded. 
+#
+# FILES LOCATION:
+#   This CAT file and related import files can be found at: https://github.com/rs-services/Training-Support/tree/master/CAT_HelloWorldWebServer
+#
 
 name 'TRAINING - Hello World Web Server CAT'
 rs_ca_ver 20160622
-short_description 'Automates the deployment of a simple single VM server.'
+short_description 'Automates the deployment of a simple web server.'
+long_description 'Launches one or two web servers as specified by the user. The web servers display user-provided text. The user can modify that text after launch.'
 
 ##################
 # Imports        #
@@ -48,6 +50,8 @@ short_description 'Automates the deployment of a simple single VM server.'
 import "common/cat_training_parameters"
 import "common/cat_training_mappings"
 import "common/cat_training_helper_functions"
+import "common/cat_training_resources"
+
 
 ##############
 # PARAMETERS 
@@ -72,6 +76,16 @@ parameter "param_projectid" do
   like $cat_training_parameters.param_projectid 
 end
 
+# Contrived example to show how conditions work
+parameter "param_extra_server" do
+  category "Deployment Options"
+  label "Extra Server?" 
+  type "string" 
+  description "Whether or not you want to launch two hello world servers instead of just one." 
+  allowed_values "Yes", "No"
+  default "No"
+end
+
 
 ##############
 # MAPPINGS   #
@@ -92,66 +106,41 @@ end
 ##############
 
 resource "web_server", type: "server" do
-  name join(["WebServer-",last(split(@@deployment.href,"/"))])
-  cloud map( $map_cloud, $param_location, "cloud" )
-  instance_type  map( $map_instance_type, map( $map_cloud, $param_location,"provider"), $param_performance)
-  server_template find("Training Hello World Web Server")  # See ServerTemplate Training Module
-  ssh_key @ssh_key
-  security_groups @sec_group
-  inputs do {
-    "WEBTEXT" => join(["text:", $param_webtext])
-  } end
+  like @cat_training_resources.web_server
+end
+
+# This web_server_2 is only launched if the user indicated they wanted an extra server.
+# Notice the use of the like option to point at the other web_server configuration.
+resource "web_server_2", type: "server" do
+  condition $extraServer
+  like @web_server
+  name join(["WebServer2-",last(split(@@deployment.href,"/"))])
 end
 
 resource "ssh_key", type: "ssh_key" do
-  name join(["sshkey_", last(split(@@deployment.href,"/"))])
-  cloud map($map_cloud, $param_location, "cloud")
+  like @cat_training_resources.ssh_key
 end
 
 resource "sec_group", type: "security_group" do
-  name join(["WebServerSecGrp-",@@deployment.href])
-  description "Hello World web server security group."
-  cloud map( $map_cloud, $param_location, "cloud" )
+  like @cat_training_resources.sec_group
 end
 
 resource "sec_group_rule_http", type: "security_group_rule" do
-  name join(["WebServerHttp-",@@deployment.href])
-  description "Allow HTTP access."
-  source_type "cidr_ips"
-  security_group @sec_group
-  protocol "tcp"
-  direction "ingress"
-  cidr_ips "0.0.0.0/0"
-  protocol_details do {
-    "start_port" => "80",
-    "end_port" => "80"
-  } end
+  like @cat_training_resources.sec_group_rule_http
 end
 
 resource "sec_group_rule_ssh", type: "security_group_rule" do
-  name join(["WebServerSsh-",@@deployment.href])
-  description "Allow SSH access."
-  source_type "cidr_ips"
-  security_group @sec_group
-  protocol "tcp"
-  direction "ingress"
-  cidr_ips "0.0.0.0/0"
-  protocol_details do {
-    "start_port" => "22",
-    "end_port" => "22"
-  } end
+  like @cat_training_resources.sec_group_rule_ssh
 end
-
 
 
 ##############
 # CONDITIONS #
 ##############
 
-# Checks if being deployed in AWS.
-# This is used to decide whether or not to pass an SSH key and security group when creating the servers.
-condition "inAWS" do
-  equals?(map($map_cloud, $param_location,"provider"), "AWS")
+# Checks if user wants to launch an extra server.
+condition "extraServer" do
+  equals?($param_extra_server, "Yes")
 end
 
 
@@ -163,6 +152,14 @@ output "server_url" do
   label "Server URL" 
   category "Connect"
   default_value join(["http://", @web_server.public_ip_address])
+  description "Access the web server page."
+end
+
+output "server_2_url" do
+  condition $extraServer
+  label "Server #2 URL" 
+  category "Connect"
+  default_value join(["http://", @web_server_2.public_ip_address])
   description "Access the web server page."
 end
 
@@ -200,9 +197,12 @@ end
 #
 # Modify the web page text
 #
-define update_webtext(@web_server, $param_webtext) do
+define update_webtext($param_webtext) do
   task_label("Update Web Page")
-  call cat_training_helper_functions.run_script(@web_server, "training_helloworld_update_rightscript", {WEBTEXT: "text:"+$param_webtext})
+  
+  @web_servers = rs_cm.servers.get(filter: [ "deployment_href=="+to_s(@@deployment.href) ])
+  call cat_training_helper_functions.run_script(@web_servers, "Training Hello World Web RightScript", {WEBTEXT: "text:"+$param_webtext})
+    
 end
 
 
