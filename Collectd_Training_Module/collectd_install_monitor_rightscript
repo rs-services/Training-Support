@@ -1,4 +1,4 @@
-#!/bin/bash -ex
+#! /usr/bin/sudo /bin/bash
 #
 # RightScript that installs a monitor script that returns a random value to collectd.
 #
@@ -9,45 +9,37 @@
 #
 
 # Setup platform specific configuration
-case "$RS_DISTRO" in
-  ubuntu)
-    config="/etc/collectd/collectd.conf"
-    plugin_dir="/etc/collectd/plugins"
-    if [ -d /etc/collectd/conf ]  # Then we appear to be on a variation of an Ubuntu deploy that uses a different plugin_dir
-    then 
-      plugin_dir="/etc/collectd/conf"
-    fi
-    lib_dir="/usr/lib/collectd"
-    ;;
-  centos)
-    config="/etc/collectd.conf"
-    plugin_dir="/etc/collectd.d"
-    lib_dir="/usr/lib/collectd"
-    ;;
-  *)
-    logger -s -t RightScale "RS_DISTRO of type $RS_DISTRO is not supported. This script is not supported on RightLink 10 servers. Exiting ...."
-    exit 1
-    ;;
-esac
 
-    
+if [[ -d /etc/apt ]]; then
+    collectd_conf_dir=/etc/collectd
+    collectd_conf_plugins_dir="$collectd_conf_dir/plugins"
+    collectd_plugin_dir=/usr/lib/collectd
+elif [[ -d /etc/yum.repos.d ]]; then
+    collectd_conf_dir=/etc
+    collectd_conf_plugins_dir="$collectd_conf_dir/collectd.d"
+    collectd_plugin_dir=/usr/lib64/collectd
+else
+    echo "unsupported distribution!"
+    exit 1
+fi
+
 plugin_script_name="monitor_random"
 
 
 # Install the script
 echo -n "Installing collectd plugin ..."
-mkdir -p $lib_dir/plugins
-cp $ATTACH_DIR/$plugin_script_name $lib_dir/plugins/$plugin_script_name
-chmod 775 $lib_dir/plugins/$plugin_script_name
+mkdir -p $collectd_plugin_dir/plugins
+cp $RS_ATTACH_DIR/$plugin_script_name $collectd_plugin_dir/plugins/$plugin_script_name
+chmod 775 $collectd_plugin_dir/plugins/$plugin_script_name
 echo "Done"
 echo
 
 # Create the collectd configuration
 echo "Configuring collectd..."
-cat << EOF > $plugin_dir/$plugin_script_name.conf
+cat << EOF > $collectd_conf_dir/$plugin_script_name.conf
 LoadPlugin exec
 <Plugin exec>
-  Exec "rightscale" "$lib_dir/plugins/$plugin_script_name" "$SERVER_UUID"
+  Exec "rightlink" "$collectd_plugin_dir/plugins/$plugin_script_name" "$SERVER_UUID"
 </Plugin>
 EOF
 
