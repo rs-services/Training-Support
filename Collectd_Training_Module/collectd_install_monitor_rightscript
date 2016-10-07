@@ -36,7 +36,7 @@ echo
 
 # Create the collectd configuration
 echo "Configuring collectd..."
-cat << EOF > $collectd_conf_dir/$plugin_script_name.conf
+cat << EOF > $collectd_conf_plugins_dir/$plugin_script_name.conf
 LoadPlugin exec
 <Plugin exec>
   Exec "rightlink" "$collectd_plugin_dir/plugins/$plugin_script_name" "$SERVER_UUID"
