@@ -31,20 +31,20 @@
 # Or the instructor has provided the ServerTemplate.
 #
 # REQUIRED MODIFICATIONS:
-#   - Specify a name for the CAT (around line 47)
-#   - Specify the name of your Hello World ServerTemplate in the server declaration (around line 104)
-#   - Update the update_webtext() definition to use your web text setting RightScript you developed for the Hello World ServerTemplate (around line 235)
+#   - Specify a name for the CAT (around line 36)
+#   - Specify the name of your Hello World ServerTemplate in the server declarateion (around line 98)
+#   - Update the update_webtext() definition to use your web text setting RightScript you developed for the Hello World ServerTemplate (around line 177)
 #
 # ADVANCED/OPTIONAL MODIFICATIONS:
 #   - Raise an error if the server does not achieve operational state when (re)starting. See the "start_server()" definition.
-#   - When updating the webtext through the more actions button, update the server input to store this value so subsequent stop/starts will retain the value. See the update_webtext() definition.
-#     (Hint: use the built-in multi_update_inputs() API function with the servers current instances.)
-#
+#   - When updating the webtext through the more actions button, update the server input to store this value so subsequent stop/starts will retain the value. 
+#       (Hint: use the built-in multi_update_inputs() function.)
+# 
 # FILES LOCATION:
 #   This CAT file and related import files can be found at: https://github.com/rs-services/Training-Support/tree/master/CAT_HelloWorldWebServer
 #
 
-name # See http://docs.rightscale.com/ss/reference/cat/v20160622/index.html#fields
+name "Instructor - Hello World CAT"
 rs_ca_ver 20160622
 short_description 'Automates the deployment of a simple web server.'
 
@@ -101,8 +101,7 @@ end
 
 resource "web_server", type: "server" do
   like @cat_training_resources.web_server
-  server_template # See find() as defined here: http://docs.rightscale.com/ss/reference/cat/v20160622/index.html#built-in-methods-and-other-keywords
-                  # See server resource declaration info here: http://docs.rightscale.com/ss/reference/cat/v20160622/ss_CAT_resources.html#resources-server
+  server_template find("Training Hello World Web ServerTemplate")
 end
 
 resource "ssh_key", type: "ssh_key" do
@@ -136,7 +135,6 @@ end
 output "server_url" do
   label "Server URL" 
   category "Connect"
-  default_value join(["http://", @web_server.public_ip_address])
   description "Access the web server page."
 end
 
@@ -188,11 +186,11 @@ end
 # 
 # Perform custom enable operation.
 # 
-define post_launch($param_projectid) return $web_server_link do
+define post_launch(@web_server, $param_projectid) return $web_server_link do
   #Add project id tag to the server
   $tags=[join(["project:id=",$param_projectid])]
   rs_cm.tags.multi_add(resource_hrefs: @@deployment.servers().current_instance().href[], tags: $tags)
-
+  
   # Get the link to the web server
   call get_server_link(@web_server) retrieve $web_server_link
 
@@ -209,9 +207,13 @@ end
 define start_server(@web_server) return @web_server, $web_server_link do
   @web_server.current_instance().start()
   sleep_until(@web_server.state == "operational" || @web_server.state == "stranded")
-  ### Optional: Raise an error if server does not return operational. See http://docs.rightscale.com/ss/reference/rcl/v2/index.html.
-
-  # Get the link to the web server
+  
+  # If it's not happy raise an error which will show in SS UI
+  if @web_server.state != "operational"
+    raise "Server restart failed."
+  end
+  
+  # Get the link to the web server with the (likely) new IP address)
   call get_server_link(@web_server) retrieve $web_server_link
 
 end
@@ -229,11 +231,22 @@ define update_webtext($param_webtext) do
     
   # Prepare the input hash
   $inp = {WEBTEXT: "text:"+$param_webtext}
+    
+  # Update the server level inputs with the updated webtext.
+  call update_servers_inputs(@web_servers, $inp)
   
   # Call a function to run the rightscript that updates the webtext.
   # See the cat_training_lib_helper_functions.cat.rb for this function
   call cat_training_helper_functions.run_script(@web_servers, "training_helloworld_update_rightscript",  $inp)
 end
+
+#
+# Helper function to update the server inputs
+# 
+define update_servers_inputs(@servers, $input_hash) do
+  @servers.current_instance().multi_update_inputs(inputs: $inp)
+end
+
 
 #
 # Helper function to get the server link
@@ -245,4 +258,5 @@ define get_server_link(@server) return $server_link do
   
   $server_link = "http://"+@server.current_instance().public_ip_addresses[0]
 end
+
 
