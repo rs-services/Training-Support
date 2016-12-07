@@ -188,7 +188,7 @@ end
 # 
 # Perform custom enable operation.
 # 
-define post_launch($param_projectid) return $web_server_link do
+define post_launch(@web_server, $param_projectid) return $web_server_link do
   #Add project id tag to the server
   $tags=[join(["project:id=",$param_projectid])]
   rs_cm.tags.multi_add(resource_hrefs: @@deployment.servers().current_instance().href[], tags: $tags)
@@ -232,7 +232,7 @@ define update_webtext($param_webtext) do
   
   # Call a function to run the rightscript that updates the webtext.
   # See the cat_training_lib_helper_functions.cat.rb for this function
-  call cat_training_helper_functions.run_script(@web_servers, "training_helloworld_update_rightscript",  $inp)
+  call cat_training_helper_functions.run_script(@web_servers, "YOUR_UPDATE_RIGHTSCRIPT_NAME",  $inp)
 end
 
 #
