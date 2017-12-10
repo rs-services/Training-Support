@@ -27,81 +27,118 @@
 # Launches a basic "Hello World" web server.
 #
 # PREREQUISITES
-# The student has gone through the ServerTemplate exercise and created a basic Hello World ServerTemplate.
-# Or the instructor has provided the ServerTemplate.
+# Web Server ServerTemplate from ServerTemplate training module
 #
-# REQUIRED MODIFICATIONS:
-#   - Specify a name for the CAT (around line 36)
-#   - Specify the name of your Hello World ServerTemplate in the server declarateion (around line 98)
-#   - Update the update_webtext() definition to use your web text setting RightScript you developed for the Hello World ServerTemplate (around line 177)
-#
-# ADVANCED/OPTIONAL MODIFICATIONS:
-#   - Raise an error if the server does not achieve operational state when (re)starting. See the "start_server()" definition.
-#   - When updating the webtext through the more actions button, update the server input to store this value so subsequent stop/starts will retain the value. 
-#       (Hint: use the built-in multi_update_inputs() function.)
-# 
 # FILES LOCATION:
 #   This CAT file and related import files can be found at: https://github.com/rs-services/Training-Support/tree/master/CAT_HelloWorldWebServer
 #
 
-name "Instructor - Hello World CAT"
-rs_ca_ver 20160622
+name "Hello World CAT"
+rs_ca_ver 20161221
 short_description 'Automates the deployment of a simple web server.'
 
 ##################
 # Imports        #
 ##################
-
-import "common/cat_training_parameters"
-import "common/cat_training_mappings"
-import "common/cat_training_helper_functions"
 import "common/cat_training_resources"
+import "common/cat_training_helper_functions"
 
 ##############
-# PARAMETERS 
+# INPUTS 
 # Inputs provided by users when launching the cloud application.
 ##############
-
-parameter "param_location" do
-  like $cat_training_parameters.param_location
+# Which cloud?
+# Maps to specific cloud below.
+parameter "param_location" do 
+  category "Deployment Options"
+  label "Cloud" 
+  type "string" 
+  description "Cloud to deploy in." 
+  allowed_values "AWS-US-East", "AWS-US-West"
+  default "AWS-US-East"
 end
 
+# What type of instance?
+# Maps to a specific instance type below.
 parameter "param_performance" do 
-  like $cat_training_parameters.param_performance
+  category "Deployment Options"
+  label "Performance profile" 
+  type "string" 
+  description "Compute and RAM" 
+  allowed_values "low", "medium", "high"
+  default "low"
 end
 
 # What text does the user want the web server to display when browser is pointed at it.
 parameter "param_webtext" do 
-  like $cat_training_parameters.param_webtext
+  category "Application Options"
+  label "Web Text" 
+  type "string" 
+  description "Text to display on the web server." 
+  default "Hello World!"
 end
 
 # Project ID for the application
 parameter "param_projectid" do
-  like $cat_training_parameters.param_projectid 
+  category "Project Options"
+  label "Project ID"
+  type "string"
+  description "Project Id for the application."
+  min_length 8
+  max_length 24
+  allowed_pattern "^[0-9a-zA-Z]+$"
+  constraint_description "Must be alphanumeric string of 8 to 24 characters."
+  default "Project1234"  
 end
 
+##############
+# OUTPUTS    #
+##############
+output "server_url" do
+  label "Server URL" 
+  category "Connect"
+  description "Access the web server page."
+end
 
 ##############
 # MAPPINGS   #
 ##############
-
 # Maps the user's selected performance level into a specific instance type.
-mapping "map_instance_type" do 
-  like $cat_training_mappings.map_instance_type 
+mapping "map_instance_type" do {
+  "AWS" => {
+    "low" => "m3.medium",  
+    "medium" => "m3.large", 
+    "high" => "m3.xlarge", 
+  },
+}
 end
 
 # Maps the user's selected cloud into a specific cloud or region.
-mapping "map_cloud" do 
-  like $cat_training_mappings.map_cloud 
+mapping "map_cloud" do {
+  "AWS-US-East" => {
+    "provider" => "AWS",
+    "cloud" => "us-east-1",
+  },
+  "AWS-US-West" => {
+    "provider" => "AWS",
+    "cloud" => "us-west-1",
+  },
+}
 end
 
 ##############
 # RESOURCES  #
 ##############
-
 resource "web_server", type: "server" do
-  like @cat_training_resources.web_server
-  server_template find("Training Hello World Web ServerTemplate")
+  name join(["WebServer-", last(split(@@deployment.href, "/"))])
+  cloud map( $map_cloud, $param_location, "cloud" )
+  instance_type  map( $map_instance_type, map( $map_cloud, $param_location,"provider"), $param_performance)
+  server_template find("Training Hello World Web ServerTemplate")  # See ServerTemplate Training Module
+  ssh_key @ssh_key
+  security_groups @sec_group
+  inputs do {
+    "WEBTEXT" => join(["text:", $param_webtext])
+  } end
 end
 
 resource "ssh_key", type: "ssh_key" do
@@ -119,25 +156,6 @@ end
 resource "sec_group_rule_ssh", type: "security_group_rule" do
   like @cat_training_resources.sec_group_rule_ssh
 end
-
-
-##############
-# CONDITIONS #
-##############
-
-# NONE at this time
-
-
-##############
-# OUTPUTS    #
-##############
-
-output "server_url" do
-  label "Server URL" 
-  category "Connect"
-  description "Access the web server page."
-end
-
 
 ###############
 ## Operations #
@@ -193,7 +211,6 @@ define post_launch(@web_server, $param_projectid) return $web_server_link do
   
   # Get the link to the web server
   call get_server_link(@web_server) retrieve $web_server_link
-
 end
 
 #
@@ -215,7 +232,6 @@ define start_server(@web_server) return @web_server, $web_server_link do
   
   # Get the link to the web server with the (likely) new IP address)
   call get_server_link(@web_server) retrieve $web_server_link
-
 end
 
 
@@ -252,7 +268,6 @@ end
 # Helper function to get the server link
 # 
 define get_server_link(@server) return $server_link do
-  
   # Make sure the IP address is seen before trying to get it
   sleep_until(logic_not(equals?(@server.current_instance().public_ip_addresses[0], null)))
   
