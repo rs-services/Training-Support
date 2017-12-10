@@ -1,5 +1,5 @@
 name 'TRAINING - Helper Functions'
-rs_ca_ver 20160622
+rs_ca_ver 20161221
 short_description 'Common set of helper functions used for CAT training.'
 
 package "common/cat_training_helper_functions"

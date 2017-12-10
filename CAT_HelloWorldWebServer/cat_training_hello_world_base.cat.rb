@@ -33,14 +33,14 @@
 #   This CAT file and related import files can be found at: https://github.com/rs-services/Training-Support/tree/master/CAT_HelloWorldWebServer
 #
 
-name "Hello World CAT"
+name "TRAINING - Hello World CAT"
 rs_ca_ver 20161221
 short_description 'Automates the deployment of a simple web server.'
 
 ##################
 # Imports        #
 ##################
-import "common/cat_training_resources"
+import "common/cat_training_mappings"
 import "common/cat_training_helper_functions"
 
 ##############
@@ -114,16 +114,8 @@ mapping "map_instance_type" do {
 end
 
 # Maps the user's selected cloud into a specific cloud or region.
-mapping "map_cloud" do {
-  "AWS-US-East" => {
-    "provider" => "AWS",
-    "cloud" => "us-east-1",
-  },
-  "AWS-US-West" => {
-    "provider" => "AWS",
-    "cloud" => "us-west-1",
-  },
-}
+mapping "map_cloud" do 
+  like $cat_training_mappings.map_cloud
 end
 
 ##############
@@ -133,7 +125,7 @@ resource "web_server", type: "server" do
   name join(["WebServer-", last(split(@@deployment.href, "/"))])
   cloud map( $map_cloud, $param_location, "cloud" )
   instance_type  map( $map_instance_type, map( $map_cloud, $param_location,"provider"), $param_performance)
-  server_template find("Training Hello World Web ServerTemplate")  # See ServerTemplate Training Module
+  server_template find("Training Hello World Web Server")  # See ServerTemplate Training Module
   ssh_key @ssh_key
   security_groups @sec_group
   inputs do {
@@ -142,19 +134,42 @@ resource "web_server", type: "server" do
 end
 
 resource "ssh_key", type: "ssh_key" do
-  like @cat_training_resources.ssh_key
+  name join(["sshkey_", last(split(@@deployment.href,"/"))])
+  cloud map($map_cloud, $param_location, "cloud")
 end
 
 resource "sec_group", type: "security_group" do
-  like @cat_training_resources.sec_group
+  name join(["WebServerSecGrp-",@@deployment.href])
+  description "Hello World web server security group."
+  cloud map( $map_cloud, $param_location, "cloud" )
 end
 
 resource "sec_group_rule_http", type: "security_group_rule" do
-  like @cat_training_resources.sec_group_rule_http
+  name join(["WebServerHttp-",@@deployment.href])
+  description "Allow HTTP access."
+  source_type "cidr_ips"
+  security_group @sec_group
+  protocol "tcp"
+  direction "ingress"
+  cidr_ips "0.0.0.0/0"
+  protocol_details do {
+    "start_port" => "80",
+    "end_port" => "80"
+  } end
 end
 
 resource "sec_group_rule_ssh", type: "security_group_rule" do
-  like @cat_training_resources.sec_group_rule_ssh
+  name join(["WebServerSsh-",@@deployment.href])
+  description "Allow SSH access."
+  source_type "cidr_ips"
+  security_group @sec_group
+  protocol "tcp"
+  direction "ingress"
+  cidr_ips "0.0.0.0/0"
+  protocol_details do {
+    "start_port" => "22",
+    "end_port" => "22"
+  } end
 end
 
 ###############
