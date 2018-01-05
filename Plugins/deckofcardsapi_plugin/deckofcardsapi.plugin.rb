@@ -60,6 +60,8 @@ end
 
 resource_pool "deckofcards" do
   plugin $rs_deckofcards
+  # If standing up your own deck of cards server, uncomment the next line and change SERVER_IP accordingly
+  # host http://SERVER_IP:8000
 end
 
 define create_deck(@declaration) return @resource do
