@@ -19,7 +19,7 @@ import "sys_log"
 plugin "rs_deckofcards" do
   
   endpoint do
-    default_host "https://deckofcardsapi.com"  
+    default_host "deckofcardsapi.com"  
     path "/api"
     default_scheme "https"
   end
@@ -61,11 +61,12 @@ end
 resource_pool "deckofcards" do
   plugin $rs_deckofcards
   # If standing up your own deck of cards server, uncomment the next line and change SERVER_IP accordingly
-  # host http://SERVER_IP:8000
+  # host "http://SERVERIP:8000"
 end
 
 define create_deck(@declaration) return @resource do
   sub on_error: stop_debugging() do
+    # Start of debugging/logging code
     call start_debugging()
     $object = to_object(@declaration)
     $type = $object["type"]
@@ -73,10 +74,18 @@ define create_deck(@declaration) return @resource do
     call sys_log.set_task_target(@@deployment)
     call sys_log.summary(join(["Provision ",$type]))
     call sys_log.detail($object)
+    
+    # This line it creates the deck as per how "create" is declared in the plugin.
     @operation = rs_deckofcards.deck.create($fields) 
+    
+    # Continued debugging/logging code
     call sys_log.detail("CREATE HREF: "+to_s(@operation))
     call sys_log.detail("CREATE HREF OBJECT: "+to_s(to_object(@operation)))
+      
+    # This line does a get on the created object so the resource is returned
     @resource = @operation.get()
+    
+    # Finshing the debugging/logging code.
     call sys_log.detail(to_object(@resource))
     call stop_debugging()
   end
