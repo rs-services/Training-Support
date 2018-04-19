@@ -33,9 +33,9 @@ short_description 'Updates password for training student account and updates app
 
 
 parameter "param_new_password" do 
-  label "training@rightscale.com new password" 
+  label "new password" 
   type "string" 
-  description "New password for training student account." 
+  description "New password for training student account. The CAT output will include the student login." 
   no_echo true
   min_length 8
 end
@@ -45,7 +45,12 @@ end
 ##############
 # OUTPUTS    #
 ##############
-output "server_url" do
+output "out_training_student_login" do
+  label "Training Account Login" 
+  description "The login userid for the training student in this account."
+end
+
+output "training_student_password" do
   label "Training Account Password Credential" 
   description "Where to find the password if forgotten."
   default_value "TRAINING_STUDENT_PASSWORD"
@@ -60,28 +65,50 @@ end
 operation "launch" do
   description "Manage training account password"
   definition "manage_training_account"
+  output_mappings do {
+    $out_training_student_login => $training_student_login,
+  } end
 end
 
 
-define manage_training_account($param_new_password) do
-  $training_email = "training@rightscale.com"
+define manage_training_account($param_new_password) return $training_student_login do
+  $training_student_login = "UNDEFINED"
   $cred_name = "TRAINING_STUDENT_PASSWORD"
+  
+  @password_cred = rs_cm.credentials.get(filter: ["name=="+$cred_name])
+  if equals?(size(@password_cred), 0) # credential not found
+    raise "Credential, "+$cred_name+",  not found. Create credential with the name with the trainingX@rightscale.com user password."
+  end
+  
+  $cred_description = @password_cred.description
+  $cred_description_parts = split($cred_description, " ")
+  foreach $part in $cred_description_parts do
+    if $part =~ "/training.*@rightscale.com/"
+      $training_student_login = $part
+    end
+  end
+  
+  if $training_student_login == "UNDEFINED" 
+    raise "Update the DESCRIPTION for credential, "+$cred_name+", to include the training service accont email address."
+  end
+  
   # grab the current password
   $training_current_password = cred($cred_name)
-  
+    
   # update the user with the new password
   $user_hash = {
-    current_email: $training_email,
+    current_email: $training_student_login,
     current_password: $training_current_password,
     new_password: $param_new_password
   }
   # Find the user
-  @user = rs_cm.users.get(filter: ["email=="+$training_email])
+  @user = rs_cm.users.get(filter: ["email=="+$training_student_login])
   # Update the user
   @user.update(user: $user_hash)
 
   # Store the new password in the credential
-  @password_cred = rs_cm.credentials.get(filter: ["name=="+$cred_name])
   @password_cred.update(credential: { value: $param_new_password })
 end
+
+
 
