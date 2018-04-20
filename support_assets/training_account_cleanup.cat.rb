@@ -23,15 +23,15 @@
 
 
 # DESCRIPTION
-# Used to manage the "training@rightscale.com" user login that can be provided to students to use
-# during training instead of inviting individual students.
+# Automates cleaning up training account.
+# Lightly tested so ymmv
 #
 
 name "INSTRUCTOR SUPPORT - Training Account Clean Up"
 rs_ca_ver 20161221
 short_description 'Cleans up the training account.'
 
-
+import "training/support/user_management"
 
 ###############
 ## Operations #
@@ -40,70 +40,132 @@ short_description 'Cleans up the training account.'
 operation "launch" do
   description "Clean up the account"
   definition "clean_account"
- 
 end
 
 define clean_account() do
   
   # Terminate all running or failed cloud apps in the account
-  
-  
-  # Delete all terminated cloud apps in the account
-  
-  # Terminate all servers in the account
-  
-  # Disable all the server arrays in the account and terminate the instances
-  
-  # Delete all ServerTemplates that are not used for the training CAT
-  
-  # Delete all RightScripts that are not used for training CAT
-  
-  # Delete all ssh keys
-  
-  # Delete all security groups
-  
-  # Change the account name to indicate it is now available
-  
-end
-
-define manage_training_account($param_new_password) return $training_student_login do
-  $training_student_login = "UNDEFINED"
-  $cred_name = "TRAINING_STUDENT_PASSWORD"
-  
-  @password_cred = rs_cm.credentials.get(filter: ["name=="+$cred_name])
-  if equals?(size(@password_cred), 0) # credential not found
-    raise "Credential, "+$cred_name+",  not found. Create credential with the name with the trainingX@rightscale.com user password."
-  end
-  
-  $cred_description = @password_cred.description
-  $cred_description_parts = split($cred_description, " ")
-  foreach $part in $cred_description_parts do
-    if $part =~ "/training.*@rightscale.com/"
-      $training_student_login = $part
+  @executions = rs_ss.executions.get()
+  sub task_label: "Terminating running or failed cloud apps" do
+    $wake_condition = "/^(terminated|failed)$/"
+    foreach @execution in @executions do
+      if (@execution.status == "running") || (@execution.status == "failed")
+        @execution.terminate()
+        sleep_until(@execution.status[] =~ $wake_condition)
+      end
     end
   end
   
-  if $training_student_login == "UNDEFINED" 
-    raise "Update the DESCRIPTION for credential, "+$cred_name+", to include the training service accont email address."
+  # Delete all terminated cloud apps in the account
+  sub task_label: "Deleting terminated cloud apps" do
+    foreach @execution in @executions do
+      if (@execution.status == "terminated")
+        @execution.delete()
+      end
+    end
   end
   
-  # grab the current password
-  $training_current_password = cred($cred_name)
-    
-  # update the user with the new password
-  $user_hash = {
-    current_email: $training_student_login,
-    current_password: $training_current_password,
-    new_password: $param_new_password
-  }
-  # Find the user
-  @user = rs_cm.users.get(filter: ["email=="+$training_student_login])
-  # Update the user
-  @user.update(user: $user_hash)
+  # Delete all CATs that are not the training CAT
+  # Not a perfect solution but as long as students keep "Hello" in their CAT name it'll work.
+  # Otherwise, as instructors notice the rogue CATs in Designer, then can delete them easily enough.
+  sub task_label: "Deleting CATs" do
+    $training_cat_name = "TRAINING - Hello World CAT"
+    @cats = rs_ss.templates.get()
+    $$deleted_cats = []
+    foreach @cat in @cats do
+      if @cat.name =~ "Hello"
+        if @cat.name != $training_cat_name
+          @cat.delete()
+        end
+      end
+    end
 
-  # Store the new password in the credential
-  @password_cred.update(credential: { value: $param_new_password })
 end
+  
+  # Disable all the server arrays in the account and terminate the instances
+  sub task_label: "Terminating server arrays" do
+    @server_arrays = rs_cm.server_arrays.get()
+    @server_arrays.update(server_array: { state: "disabled"})
+    
+    sub on_error: skip do
+      @array_instances = @server_arrays.current_instances()
+    delete(@array_instances)
+    end
+     
+    # Delete the server arrays
+    @server_arrays.destroy()
+  end
+  
+  # Terminate all servers and instances in the account
+  sub task_label: "Terminating servers and instances" do
+    @servers = rs_cm.servers.get()
+    delete(@servers)
+    
+    @instances = rs_cm.instances.get()
+    delete(@instances)
+  end
+  
+  # Delete all Deployments
+  sub task_label: "Deleting deployments" do
+    @deployments = rs_cm.deployments.get()
+    foreach @deployment in @deployments do
+      if downcase(@deployment.name) != "default"
+        @deployment.destroy()
+      end
+    end
+  end
+  
+  # Delete all ServerTemplates that are not used for the training CAT
+  sub task_label: "Deleting server templates" do
+    $training_st_name = "Training Hello World Web Server"
+    @sts = rs_cm.server_templates.get(filter: ["revision==0"])
+    foreach @st in @sts do
+      if @st.name != $training_st_name
+        sub on_error:skip do
+          @st.destroy()
+        end
+      end
+    end
+  end
+  
+  # Delete all RightScripts that are not used for training CAT
+  sub task_label: "Deleting rightscripts" do
+    $training_script_names = [ "training_helloworld_install_rightscript", "training_helloworld_update_rightscript" ]
+    @scripts = rs_cm.right_scripts.get()
+    foreach @script in @scripts do
+      if logic_not(contains?($training_script_names, [@script.name]))
+        if @script.revision == 0
+          sub on_error: skip do 
+            @script.destroy()
+          end
+        end
+      end
+    end
+  end
+  
+  # Delete all ssh keys security groups
+  sub task_label: "Deleting security groups" do
+    $clouds = ["/api/clouds/1","/api/clouds/3", "/api/clouds/6"]
+    foreach $cloud in $clouds do
+      @cloud = rs_cm.get(href: $cloud)
+      @cloud.ssh_keys().destroy()
+      @sgs = @cloud.security_groups()
+      foreach @sg in @sgs do
+        if downcase(@sg.name) != "default"
+          @sg.destroy()
+        end
+      end
+    end
+  end
+  
+  # Reset the training user password
+  sub task_label: "Resetting training student password" do
+    $new_password = "a"+uuid()
+    call user_management.manage_training_account($new_password)
+  end
+end
+
+
 
 
 

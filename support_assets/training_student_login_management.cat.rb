@@ -31,6 +31,7 @@ name "INSTRUCTOR SUPPORT - Training User Management"
 rs_ca_ver 20161221
 short_description 'Updates password for training student account and updates applicable credential to remember the password.'
 
+package "training/support/user_management"
 
 parameter "param_new_password" do 
   label "new password" 
