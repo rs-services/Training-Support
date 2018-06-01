@@ -71,7 +71,6 @@ define clean_account() do
   sub task_label: "Deleting CATs" do
     $training_cat_name = "TRAINING - Hello World CAT"
     @cats = rs_ss.templates.get()
-    $$deleted_cats = []
     foreach @cat in @cats do
       if @cat.name =~ "Hello"
         if @cat.name != $training_cat_name
@@ -79,8 +78,15 @@ define clean_account() do
         end
       end
     end
-
-end
+  end
+  
+  # Delete all CATs from the catalog
+  sub task_label: "Clearing the Catalog" do
+    @cats = rs_ss.applications.get()
+    foreach @cat in @cats do
+      @cat.delete()
+    end
+  end
   
   # Disable all the server arrays in the account and terminate the instances
   sub task_label: "Terminating server arrays" do
@@ -143,19 +149,24 @@ end
     end
   end
   
-  # Delete all ssh keys security groups
-  sub task_label: "Deleting security groups" do
-    $clouds = ["/api/clouds/1","/api/clouds/3", "/api/clouds/6"]
-    foreach $cloud in $clouds do
-      @cloud = rs_cm.get(href: $cloud)
-      @cloud.ssh_keys().destroy()
-      @sgs = @cloud.security_groups()
-      foreach @sg in @sgs do
-        if downcase(@sg.name) != "default"
-          @sg.destroy()
+  # Delete all ssh keys and security groups
+  sub task_label: "Deleting SSH keys and security groups" do
+    @clouds = rs_cm.clouds.get()
+    foreach @cloud in @clouds do
+      $cloud_type = @cloud.cloud_type
+      if ($cloud_type == "vscale") || ($cloud_type == "amazon") 
+        sub on_error: skip do
+          @cloud.ssh_keys().destroy()
+        end
+      elsif ($cloud_type == "amazon") || ($cloud_type == "azure_v2") || ($cloud_type == "google")
+        @sgs = @cloud.security_groups()
+        foreach @sg in @sgs do
+          if downcase(@sg.name) != "default"
+             @sg.destroy()
+          end
         end
       end
-    end
+    end   
   end
   
   # Reset the training user password
