@@ -113,7 +113,8 @@ for (var i = 0; i < ds_clouds.length; i++) {
   if (cloud_instance_count_hash[cloud_href]) {
     instance_count = cloud_instance_count_hash[cloud_href]
   }
-  cloud_json = { "cloud_href": cloud_href, "cloud_type": cloud_type, "cloud_name": cloud_name, "number_of_instances": instance_count }
+  # casting to float is temporary until fix is in to support integers from javascript datasource.
+  cloud_json = { "cloud_href": cloud_href, "cloud_type": cloud_type, "cloud_name": cloud_name, "number_of_instances": parseFloat(instance_count) }
   cloud_instance_counts.push(cloud_json)  
 }
 EOS
