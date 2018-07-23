@@ -113,7 +113,7 @@ for (var i = 0; i < ds_clouds.length; i++) {
   if (cloud_instance_count_hash[cloud_href]) {
     instance_count = cloud_instance_count_hash[cloud_href]
   }
-  cloud_json = { "cloud_href": cloud_href, "cloud_type": cloud_type, "cloud_name": cloud_name, "numinstances": instance_count }
+  cloud_json = { "cloud_href": cloud_href, "cloud_type": cloud_type, "cloud_name": cloud_name, "number_of_instances": instance_count }
   cloud_instance_counts.push(cloud_json)  
 }
 EOS
@@ -123,7 +123,7 @@ policy "pol_cloud_instance_count" do
   validate_each $ds_cloud_instance_counts do
   # The incident fires if the check is false. 
   # So as long as the number of instances found is less than the user-specified number, we don't care.
-  check lt(val(item, "numinstances"), $param_number_cloud_instances)
+  check lt(val(item, "number_of_instances"), $param_number_cloud_instances)
 
   # The report
 	summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): Cloud Instance Count Policy Results"
@@ -131,7 +131,7 @@ policy "pol_cloud_instance_count" do
 | Cloud Name | Cloud Type | Cloud HREF | Number of Instances Found |
 | ---------- | ---------- | ---------- | ------------------------- |
 {{ range data -}}
-| {{ .cloud_name }} | {{ .cloud_type }} | {{ .cloud_href }} | {{ .numinstances }} |
+| {{ .cloud_name }} | {{ .cloud_type }} | {{ .cloud_href }} | {{ .number_of_instances }} |
 {{ end -}}
 EOS
   end
