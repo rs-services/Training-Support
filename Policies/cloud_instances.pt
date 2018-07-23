@@ -1,0 +1,141 @@
+# Cloud Instances Policy Template
+#
+# This policy reports clouds that have more than X instances in it, where X is user-specified.
+#
+
+name "Cloud Instance Count Policy"
+rs_pt_ver 20180301
+type "policy"
+short_description "Finds clouds with more than a user-specified number of instances."
+severity "medium" 
+category "Cost" # User-specified categorization
+
+# what permissions does this policy (and by extension the user applying the policy) need for this policy to work.
+permission "cloud_permissions" do
+  resources "rs_cm.clouds"
+  actions   "rs_cm.index"
+end
+
+permission "instance_permissions" do
+  resources "rs_cm.instances"
+  actions   "rs_cm.*"  # Need to be able to index, stop, delete, etc
+end
+
+permission "perm_retrieve_tags" do
+  label "Retrieve Tags"
+  actions "rs_cm.by_resource"
+  resources "rs_cm.tags"
+end
+
+# user inputs
+parameter "param_number_cloud_instances" do
+  type "number"
+  label "Minimum number of instances in the cloud to be considered in violation of the policy"
+  default 10
+end
+
+parameter "param_limit_tags" do
+  type "list"
+  label "List of RightScale tags to limit the instance search."
+end
+
+# data sources
+
+# All the clouds attached to the account
+resources "clouds", type: "rs_cm.clouds" 
+
+# Process the clouds resource into an array of cloud-specific information we care about.
+datasource "ds_clouds" do
+  iterate @clouds
+  field "href", href(iter_item)
+  field "cloud_type", val(iter_item, "cloud_type")
+  field "name", val(iter_item,'name')
+end
+
+# All the instances in the account.
+# Iterate through each cloud since the instance API is of the form: GET /api/clouds/:cloud_id/instances
+# Only return those with the given tags if specified.
+# Only return instances that are running or stopped.
+resources "instances", type: "rs_cm.instances" do
+  iterate @clouds
+  cloud_href href(iter_item) 
+  tags $param_limit_tags
+  filter do
+    state ne: ["inactive", "terminated", "dead"]
+  end
+end
+
+# At this point we have a list of instances in the @instances resource from above, but we don't really know how many instances are in each cloud.
+# So use a javascript data source to create a table of clouds and the number of instances.
+# script-based datasource that applies the logic to return only unattached volumes
+datasource "ds_cloud_instance_counts" do
+  run_script $js_cloud_instance_counts, $ds_clouds, @instances
+end
+
+# Create a table of clouds and the number of found instances.
+script "js_cloud_instance_counts", type: "javascript" do
+  parameters "ds_clouds", "instances"
+  result "cloud_instance_counts"
+  code <<-EOS
+// This is the eventual output list of cloud instance counts.
+var cloud_instance_counts = [];
+ 
+// Build a hash of cloud_href and number of instances in the cloud
+var cloud_instance_count_hash = {}
+for (var i = 0; i < instances.length; i++) {
+  var instance = instances[i]
+  
+  // Find the cloud this instance is in
+  var instance_cloud_href = ""
+  instance.links.forEach(function(link) {
+    if (link.rel == "cloud") {
+      instance_cloud_href = link.href
+    }
+  })
+  
+  // If we already encountered an instance from this cloud add one to the count.
+  // Otherwise, initialize it to 1 since we found the first one.
+  if (cloud_instance_count_hash[instance_cloud_href]) {
+    cloud_instance_count_hash[instance_cloud_href] = cloud_instance_count_hash[instance_cloud_href] + 1
+  }else {
+    cloud_instance_count_hash[instance_cloud_href] = 1
+  }
+}
+
+// Build the array of cloud json objects containing cloud info and the counts of instances in each cloud.
+var cloud_json = {}
+for (var i = 0; i < ds_clouds.length; i++) {
+  var ds_cloud = ds_clouds[i]
+  var cloud_href = ds_cloud["href"]
+  var cloud_type = ds_cloud["cloud_type"]
+  var cloud_name = ds_cloud["name"]
+  var instance_count = 0 // assume none unless the next line finds some
+  if (cloud_instance_count_hash[cloud_href]) {
+    instance_count = cloud_instance_count_hash[cloud_href]
+  }
+  cloud_json = { "cloud_href": cloud_href, "cloud_type": cloud_type, "cloud_name": cloud_name, "numinstances": instance_count }
+  cloud_instance_counts.push(cloud_json)  
+}
+EOS
+end
+
+policy "pol_cloud_instance_count" do
+  validate_each $ds_cloud_instance_counts do
+  # The incident fires if the check is false. 
+  # So as long as the number of instances found is less than the user-specified number, we don't care.
+  check lt(val(item, "numinstances"), $param_number_cloud_instances)
+
+  # The report
+	summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): Cloud Instance Count Policy Results"
+  detail_template <<-EOS
+| Cloud Name | Cloud Type | Cloud HREF | Number of Instances Found |
+| ---------- | ---------- | ---------- | ------------------------- |
+{{ range data -}}
+| {{ .cloud_name }} | {{ .cloud_type }} | {{ .cloud_href }} | {{ .numinstances }} |
+{{ end -}}
+EOS
+  end
+end
+
+
+
