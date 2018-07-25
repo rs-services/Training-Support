@@ -124,9 +124,12 @@ policy "pol_cloud_instance_count" do
   validate_each $ds_cloud_instance_counts do
   # The incident fires if the check is false. 
   # So as long as the number of instances found is less than the user-specified number, we don't care.
+  # Note: You can have multiple checks and as long as one of them returns false, the item will be added to the incident report.
   check lt(val(item, "number_of_instances"), $param_number_cloud_instances)
 
-  # The report
+  # The report is generated and presented in the policy's Incidents UI.
+  # It's also the default format for any emails sent by an escalation action.
+  # The "data" keyword object contains only those items that failed a check above.
 	summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): Cloud Instance Count Policy Results"
   detail_template <<-EOS
 | Cloud Name | Cloud Type | Cloud HREF | Number of Instances Found |
