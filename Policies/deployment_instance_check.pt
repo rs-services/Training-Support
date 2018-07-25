@@ -1,0 +1,235 @@
+# Deployment Check Policy Template
+#
+# A contrived policy for training purposes.
+# Deployment-scoped so as to make it possible for students to run the policy on their own deployment.
+# The requirements for this policy are as follows:
+# - Find runninginstances in user-specified deployment.
+# - Exclude any instances that are tagged with the user-specified tags - if any.
+# - Optionally allow the user to specify if the instances should be stopped.
+# - The report should show the cloud name for each instance that was found.
+#
+# Possible Enhancements:
+# - Allow user to specify a time at which to stop the servers.
+# - Allow user to specify a time at which to start the servers.
+#
+
+name "Deployment Check Policy"
+rs_pt_ver 20180301
+type "policy"
+short_description "Reports problem with Deployment."
+severity "medium" 
+category "Operational" # User-specified categorization
+
+# what permissions does this policy (and by extension the user applying the policy) need for this policy to work.
+permission "index_permissions" do
+  resources "rs_cm.deployments","rs_cm.clouds"
+  actions   "rs_cm.index"
+end
+
+permission "action_permissions" do
+  resources "rs_cm.instances"
+  actions   "rs_cm.*"  # Need to be able to index, stop, delete, etc
+end
+
+permission "tag_permissions" do
+  label "Retrieve Tags"
+  actions "rs_cm.by_resource"
+  resources "rs_cm.tags"
+end
+
+# user inputs
+parameter "param_deployment_name" do
+  type "string"
+  label "Name of deployment to check."
+  allowed_pattern /^.+$/  # Makes this input required
+  constraint_description "Must enter the name of a deployment to check."
+end
+
+parameter "param_exclude_tags" do
+  type "list"
+  label "List of one or more RightScale tags that will exclude the server from actions being taken."
+end
+
+parameter "param_action" do
+  type "string"
+  label "Policy action"
+  allowed_values "Email only", "Email and stop servers"
+end
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses who should receive report"
+end
+
+## DATA SOURCES ###
+
+### resource based data sources ###
+
+# Get the deployment of the given name.
+# NOTE: name filters in the RightScale API are partial match, so if the provided deployment name is a substring of multiple deployments' names, 
+# this resource will contain all the matching deployments.
+resources "deployments", type: "rs_cm.deployments" do
+  filter do
+    name eq: $param_deployment_name
+  end
+end
+
+# Get the servers in the deployment.
+# NOTE: if the deployment name given by the user matches more than one deployment, this resource will contain the servers for all the matching deployments.
+resources "servers", type: "rs_cm.servers" do
+  iterate @deployments
+  tags none($param_exclude_tags)
+  filter do
+    deployment_href eq: href(iter_item)
+  end
+end
+
+# Get clouds - needed for instance grab
+resources "clouds", type: "rs_cm.clouds" 
+
+## chained data sources ##
+
+# Just the stuff we care about with regards to the clouds
+datasource "ds_clouds" do
+  iterate @clouds
+  field "href", href(iter_item)
+  field "cloud_type", val(iter_item, "cloud_type")
+  field "name", val(iter_item,'name')
+end
+
+## javascript based data sources ##
+
+# We need to collate some information and build a table of the form:
+# server name : running instance href : cloud name 
+# So use javascript to do this.
+datasource "ds_deployment_servers" do
+  run_script $js_deployment_servers, $ds_clouds, @servers
+end
+
+# Create a table of clouds and the number of found instances.
+# Returns all servers in the deployment regardless of state.
+script "js_deployment_servers", type: "javascript" do
+  parameters "ds_clouds", "servers"
+  result "deployment_servers"
+  code <<-EOS
+// This is the eventual output list of deployment servers.
+var deployment_servers = [];
+  
+// Build a cloud href -> type hash
+var cloud_hash = {}
+for (var i = 0; i < ds_clouds.length; i++) {
+  var ds_cloud = ds_clouds[i]
+  var cloud_href = ds_cloud["href"]
+  var cloud_type = ds_cloud["cloud_type"]
+  var cloud_name = ds_cloud["name"]
+  cloud_hash[cloud_href] = { "cloud_type": cloud_type, "cloud_name": cloud_name }
+}  
+  
+// Build the array of json objects containing the server information as described above. 
+var server_json = {}
+for (var i = 0; i < servers.length; i++) {
+  var server = servers[i]
+  
+  // All servers have a name and a state
+  var server_name = server["name"]
+  var server_state = server["state"]
+
+  // Not all servers have a current instance, so check and set.
+  var server_instance_href = ""
+  server.links.forEach(function(link) {
+    if (link.rel == "current_instance") {
+      server_instance_href = link.href
+    }
+  })
+  
+  // If the server does not have a current instance, then no cloud info can be gleaned.
+  // So check and set cloud name info. 
+  var server_cloud_name = "not available"
+  if (server_instance_href) {
+    var server_cloud_id = server_instance_href.split("/")[3]  // The cloud ID is embedded in the instance ID of the form "/api/clouds/1/instances/ABCDE"
+    server_cloud_name = cloud_hash["/api/clouds/"+server_cloud_id]["cloud_name"]
+  }
+    
+  // build the json object
+  server_json = { "server_name": server_name, "server_instance_href": server_instance_href, "server_cloud_name": server_cloud_name, "server_state": server_state }
+    
+  // push object onto the output array
+  deployment_servers.push(server_json)
+}
+EOS
+end
+
+# The policy declaration.
+# This is where the data is checked for anomalies and actions taken.
+policy "pol_deployment_check" do
+  
+  # Look at each item in the array that was produced by the javascript datasource above and
+  validate_each $ds_deployment_servers do
+    
+    # Check the item and ignore out those items that are NOT in what is basically a running state.
+    # So this is a big nesting of logical ORs where if the item is in any of the "non-running" states, it's true and therefore not flagged as
+    # an anomaly.
+    # NOTE: Another way to skin this cat could be to do this test in the javascript and have the javascript datasource only return "running" servers.
+    # But one could assert that the datasources should be as logic-free as possible. They should just be data. And, let the policy apply the anomaly logic.
+    check logic_or(
+      logic_or(
+        logic_or(eq(val(item, "server_state"), "inactive"), eq(val(item, "server_state"), "decommissioning")),
+        logic_or(eq(val(item, "server_state"), "terminated"), eq(val(item, "server_state"), "terminating"))), 
+      logic_or(eq(val(item, "server_state"), "stopped"), eq(val(item, "server_state"), "provisioned")))
+
+    # If any of the elements do NOT pass the check(s), then escalate will be invoked.
+    escalate $process_instances
+    
+    # If an incident that was open closes for whatever reason the resolution is executed.
+    # For example, if the policy found running servers and then the next time it ran, all servers were not running, this would cause resolve to be invoked.
+    resolve $send_resolution_email
+    
+    # The report is generated and presented in the policy's Incidents UI.
+    # It's also the default format for any emails sent by an escalation action.
+    # The "data" keyword object contains those items that failed a check above.
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): Policy Report for deployment \"{{ parameters.param_deployment_name }}\""
+    detail_template <<-EOS
+| Server Name | Cloud Name | Server State | Running Instance HREF |
+| ----------- | ---------- | ------------ | --------------------- | 
+{{ range data -}}
+    | {{ .server_name }} | {{ .server_cloud_name }} | {{ .server_state }} | {{ .server_instance_href }} |
+{{ end -}}
+EOS
+  end
+end
+
+# Policy escalation declaration
+escalation "process_instances" do
+  # Let the identified folks know that running servers were found.
+  email $param_email
+  
+  if eq($param_action,"Email and stop servers") 
+    run "stop_instances", data
+    resolve_incident  # This is a function that marks the resultant incident as resolved.
+  end
+end
+
+# Policy resolution declaration.
+# Only runs if the incident changes from the "Open" state or resolve_incident function is executed.
+resolution "send_resolution_email" do
+  email $param_email do
+    # It's best to keep the subjects the same within the policy so that they collate as email threads.
+    subject_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): Policy Report for deployment \"{{ parameters.param_deployment_name }}\""
+    body_template "No running servers in deployment \"{{ parameters.param_deployment_name }}\""
+  end
+end
+
+
+# RightScale Cloud Language (RCL) used to take action.
+define stop_instances($data) do
+  foreach $item in $data do
+    # Find the instance
+    @instance = rs_cm.get(href: $item["server_instance_href"])
+    # Stop the instance
+    @instance.stop()
+  end
+end
+
+
+
+
