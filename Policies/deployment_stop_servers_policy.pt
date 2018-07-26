@@ -4,17 +4,15 @@
 #
 # Deployment-scoped so as to make it possible for students to run the policy on their own deployment.
 # The requirements for this policy are as follows:
-# - Find running instances in user-specified deployment.
+# - Find running instances in user-specified deployment and stop them.
 # - Exclude any instances that are tagged with the user-specified tags - if any.
-# - Optionally allow the user to specify if the instances should be stopped.
 # - The report should show the cloud name for each instance that was found.
-#
 #
 
 name "Deployment Servers Stop Policy"
 rs_pt_ver 20180301
 type "policy"
-short_description "Reports running servers in a deployment and optionally stops them."
+short_description "Reports running servers in a deployment and stops them."
 severity "medium" 
 category "Operational"
 
@@ -46,12 +44,6 @@ end
 parameter "param_exclude_tags" do
   type "list"
   label "List of one or more RightScale tags that will exclude the server from actions being taken."
-end
-
-parameter "param_action" do
-  type "string"
-  label "Policy action"
-  allowed_values "Email only", "Email and stop servers"
 end
 
 parameter "param_email" do
@@ -104,18 +96,18 @@ end
 # We need to collate some information and build a table of the form:
 # server name : running instance href : cloud name 
 # So using javascript to do this.
-datasource "ds_deployment_running_servers" do
-  run_script $js_deployment_running_servers, $ds_clouds, @servers
+datasource "ds_deployment_servers" do
+  run_script $js_deployment_servers, $ds_clouds, @servers
 end
 
 # Create a table of clouds and the number of found instances.
 # Returns all servers in the deployment regardless of state.
-script "js_deployment_running_servers", type: "javascript" do
+script "js_deployment_servers", type: "javascript" do
   parameters "ds_clouds", "servers"
-  result "deployment_running_servers"
+  result "deployment_servers"
   code <<-EOS
 // This is the eventual output list of deployment servers.
-var deployment_running_servers = [];
+var deployment_servers = [];
   
 // Build a cloud href -> type hash
 var cloud_hash = {}
@@ -136,27 +128,27 @@ for (var i = 0; i < servers.length; i++) {
   var server_name = server["name"]
   var server_state = server["state"]
     
-  // Only want to return what are essentially running servers.
-  if ((server_state == "operational") || (server_state == "running") || (server_state == "booting") || (server_state == "stranded")) {
-
-    // Get the href for the running instance of the server.
-    var server_instance_href = ""
-    server.links.forEach(function(link) {
-      if (link.rel == "current_instance") {
-        server_instance_href = link.href
-      }
-    })
-    
-    // Get the cloud name by extracting the cloud ID from the instance href and then using the cloud name hash created above.
-    var server_cloud_id = server_instance_href.split("/")[3]  // The cloud ID is embedded in the instance ID of the form "/api/clouds/1/instances/ABCDE"
-    server_cloud_name = cloud_hash["/api/clouds/"+server_cloud_id]["cloud_name"]
-      
-    // build the json object
-    server_json = { "server_name": server_name, "server_instance_href": server_instance_href, "server_cloud_name": server_cloud_name, "server_state": server_state }
-      
-    // push object onto the output array
-    deployment_running_servers.push(server_json)
+  // Not all servers have a current instance, but get the href if it does.
+  var server_instance_href = ""
+  server.links.forEach(function(link) {
+    if (link.rel == "current_instance") {
+      server_instance_href = link.href
+    }
+  })
+  
+  // If the server does not have a current instance, then no cloud info can be gleaned.
+  // So check and set cloud name info if possible. 
+  var server_cloud_name = "not available"
+  if (server_instance_href) {
+  var server_cloud_id = server_instance_href.split("/")[3]  // The cloud ID is embedded in the instance ID of the form "/api/clouds/1/instances/ABCDE"
+  server_cloud_name = cloud_hash["/api/clouds/"+server_cloud_id]["cloud_name"]
   }
+        
+  // build the json object
+  server_json = { "server_name": server_name, "server_instance_href": server_instance_href, "server_cloud_name": server_cloud_name, "server_state": server_state }
+    
+  // push object onto the output array
+  deployment_servers.push(server_json)
 }
 EOS
 end
@@ -165,17 +157,26 @@ end
 # This is where the data is checked for anomalies and actions taken.
 policy "pol_deployment_check" do
   
-  # By the fact that the java script datasource above creates a list containing only servers that are in some way or another "running", 
-  # then we just need to check if we got a list at all.
-  # NOTE: There is a "validate_each" directive used to look at each "item" in the array
-  validate $ds_deployment_running_servers do
+  # Look at each item in the array that was produced by the javascript datasource above 
+  validate_each $ds_deployment_servers do
     
-    # By definition if we get this far, we have servers that can be stopped.
-    # If the user selected the Email Only option, this check fails and we execute email-only related actions.
-    check ne($param_action, "Email only")
-    
+    # Check the item and ignore out those items that are NOT in what is basically a running state.
+    # So this is a big nesting of logical ORs where if the item is in any of the "non-running" states, it's true and therefore not flagged as
+    # an anomaly.
+    # NOTE: Another way to skin this cat could be to do this test in the javascript and have the javascript datasource only return "running" servers.
+    # But one could assert that the datasources should be as logic-free as possible. They should just be data. And, let the policy apply the anomaly logic.
+    check logic_or(
+      logic_or(
+        logic_or(eq(val(item, "server_state"), "inactive"), eq(val(item, "server_state"), "decommissioning")),
+        logic_or(eq(val(item, "server_state"), "terminated"), eq(val(item, "server_state"), "terminating"))), 
+      logic_or(
+        eq(val(item, "server_state"), "pending"), logic_or(eq(val(item, "server_state"), "stopped"), eq(val(item, "server_state"), "provisioned"))))
+
     # Send the report via email
     escalate $email_server_report
+    
+    # This escalation stops the servers
+    escalate $stop_servers
         
     # If an incident that was open closes for whatever reason the resolution is executed.
     # For example, if the policy found running servers and then the next time it ran, all servers were not running, this would cause resolve to be invoked.
@@ -186,34 +187,7 @@ policy "pol_deployment_check" do
     # The "data" keyword object contains those items that failed a check above.
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): Policy Report for deployment \"{{ parameters.param_deployment_name }}\""
     detail_template <<-EOS
-| Server Name | Cloud Name | Server State | Running Instance HREF |
-| ----------- | ---------- | ------------ | --------------------- | 
-{{ range data -}}
-    | {{ .server_name }} | {{ .server_cloud_name }} | {{ .server_state }} | {{ .server_instance_href }} |
-{{ end -}}
-EOS
-  end
-  
-  # If there were any servers identified  (i.e. the list of servers is not empty), then check if the user indicated whether or not
-  # to stop the servers. 
-  # If so, then stop the servers.
-  validate $ds_deployment_running_servers do
-    
-    # If the user selected the stop servers option, this check will fail.
-    check ne($param_action, "Email and stop servers")
-    
-    # Send the report via email
-    escalate $email_server_report
-    # This escalation stops the servers
-    escalate $stop_servers
-    # This sends the email indicating the servers were stopped.
-    resolve $send_resolution_email
-    
-    # The report is generated and presented in the policy's Incidents UI.
-    # It's also the default format for any emails sent by an escalation action.
-    # The "data" keyword object contains those items that failed a check above.
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): Policy Report for deployment \"{{ parameters.param_deployment_name }}\""
-    detail_template <<-EOS
+Stopping the following servers:\n
 | Server Name | Cloud Name | Server State | Running Instance HREF |
 | ----------- | ---------- | ------------ | --------------------- | 
 {{ range data -}}
@@ -249,6 +223,7 @@ end
 
 
 # RightScale Cloud Language (RCL) used to take action.
+# The contents of $data only refer to the anomalies - i.e. the servers that are in a stoppable state.
 define stop_instances($data) do
   foreach $item in $data do
     # Find the instance
