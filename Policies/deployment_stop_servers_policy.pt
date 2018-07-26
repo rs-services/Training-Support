@@ -66,22 +66,78 @@ resources "deployments", type: "rs_cm.deployments" do
 end
 
 # Get the servers in the deployment.
-# NOTE: if the deployment name given by the user matches more than one deployment, this resource will contain the servers for all the matching deployments.
+# NOTE: if the deployment name given by the user matches more than one deployment, this resource will return the the servers in the "first" found deployment.
 resources "servers", type: "rs_cm.servers" do
-  iterate @deployments
   tags none($param_exclude_tags)  # This tags directive makes it very easy to cull datasources based on tags.
   filter do
-    deployment_href eq: href(iter_item)
+    deployment_href eq:href(first(@deployments))
   end
 end
 
 # Get clouds - needed for instance grab
 resources "clouds", type: "rs_cm.clouds" 
 
-## chained data sources ##
-# Data sources can be based on other data sources.
+# Get instances in the deployment.
+# NOTE: if the deployment name given by the user matches more than one deployment, this resource will return the the instances in the "first" found deployment.
 
-# A somewhat contrived example but handy nonetheless.
+# Get instances in "operational" state
+# This is the normal server-based state.
+resources "operational_instances", type: "rs_cm.instances" do
+  iterate @clouds
+  cloud_href href(iter_item) 
+  tags none($param_exclude_tags)  # This tags directive makes it very easy to cull datasources based on tags.
+  filter do
+    deployment_href eq: href(first(@deployments))
+    state eq:"operational"
+  end
+end
+
+# Get instnces in "running" state.
+# For clouds other than AWS, raw instances have the running state.
+resources "running_instances", type: "rs_cm.instances" do
+  iterate @clouds
+  cloud_href href(iter_item) 
+  tags none($param_exclude_tags)  # This tags directive makes it very easy to cull datasources based on tags.
+  filter do
+    deployment_href eq: href(first(@deployments))
+    state eq:"running"
+  end
+end
+
+# Get instances in "booting" state since we can shut these down as well.
+resources "booting_instances", type: "rs_cm.instances" do
+  iterate @clouds
+  cloud_href href(iter_item) 
+  tags none($param_exclude_tags)  # This tags directive makes it very easy to cull datasources based on tags.
+  filter do
+    deployment_href eq: href(first(@deployments))
+    state eq:"booting"
+  end
+end
+
+## chained data sources ##
+# Data sources can be based on other resources or data sources.
+datasource "ds_operational_instances" do
+  iterate @operational_instances
+  field "href", href(iter_item)
+  field "name", val(iter_item,"name")
+  field "state", val(iter_item, "state")
+end
+
+datasource "ds_running_instances" do
+  iterate @running_instances
+  field "href", href(iter_item)
+  field "name", val(iter_item,"name")
+  field "state", val(iter_item, "state")
+end
+
+datasource "ds_booting_instances" do
+  iterate @booting_instances
+  field "href", href(iter_item)
+  field "name", val(iter_item,"name")
+  field "state", val(iter_item, "state")
+end
+
 # This datasource returns only the cloud attributes we care about.
 datasource "ds_clouds" do
   iterate @clouds
@@ -94,22 +150,23 @@ end
 # Data sources can created by using javascript to manipulate other data.
 
 # We need to collate some information and build a table of the form:
-# server name : running instance href : cloud name 
+# instance name : running instance href : cloud name 
 # So using javascript to do this.
-datasource "ds_deployment_servers" do
-  run_script $js_deployment_servers, $ds_clouds, @servers
+datasource "ds_deployment_instances" do
+  run_script $js_deployment_instances, $ds_clouds, $ds_operational_instances, $ds_running_instances, $ds_booting_instances
 end
 
 # Create a table of clouds and the number of found instances.
 # Returns all servers in the deployment regardless of state.
-script "js_deployment_servers", type: "javascript" do
-  parameters "ds_clouds", "servers"
-  result "deployment_servers"
+script "js_deployment_instances", type: "javascript" do
+  parameters "ds_clouds", "ds_operational_instances", "ds_running_instances", "ds_booting_instances"
+  result "deployment_instances"
   code <<-EOS
 // This is the eventual output list of deployment servers.
-var deployment_servers = [];
+var deployment_instances = [];
   
-// Build a cloud href -> type hash
+// Build a cloud href -> name, etc hash
+// This is used later to correlate the cloud name with the instance.
 var cloud_hash = {}
 for (var i = 0; i < ds_clouds.length; i++) {
   var ds_cloud = ds_clouds[i]
@@ -118,59 +175,51 @@ for (var i = 0; i < ds_clouds.length; i++) {
   var cloud_name = ds_cloud["name"]
   cloud_hash[cloud_href] = { "cloud_type": cloud_type, "cloud_name": cloud_name }
 }  
+
+// Concatenate the different arrays of instances
+var instances = []
+instances = ds_operational_instances.concat(ds_running_instances)
+instances = instances.concat(ds_booting_instances)
   
-// Build the array of json objects containing the server information as described above for running servers in deployment.
+// Build the array of json objects containing the instance information as described above.
 var server_json = {}
-for (var i = 0; i < servers.length; i++) {
-  var server = servers[i]
+for (var i = 0; i < instances.length; i++) {
+  var instance = instances[i]
   
-  // All servers have a name and a state
-  var server_name = server["name"]
-  var server_state = server["state"]
-    
-  // Not all servers have a current instance, but get the href if it does.
-  var server_instance_href = ""
-  server.links.forEach(function(link) {
-    if (link.rel == "current_instance") {
-      server_instance_href = link.href
-    }
-  })
-  
-  // If the server does not have a current instance, then no cloud info can be gleaned.
-  // So check and set cloud name info if possible. 
-  var server_cloud_name = "not available"
-  if (server_instance_href) {
-  var server_cloud_id = server_instance_href.split("/")[3]  // The cloud ID is embedded in the instance ID of the form "/api/clouds/1/instances/ABCDE"
-  server_cloud_name = cloud_hash["/api/clouds/"+server_cloud_id]["cloud_name"]
-  }
+  var name = instance["name"]
+  var state = instance["state"]
+  var href = instance["href"]
+
+  var server_cloud_id = href.split("/")[3]  // The cloud ID is embedded in the instance ID of the form "/api/clouds/1/instances/ABCDE"
+  var cloud_name = cloud_hash["/api/clouds/"+server_cloud_id]["cloud_name"]
         
   // build the json object
-  server_json = { "server_name": server_name, "server_instance_href": server_instance_href, "server_cloud_name": server_cloud_name, "server_state": server_state }
+  server_json = { "name": name, "href": href, "cloud_name": cloud_name, "state": state }
     
   // push object onto the output array
-  deployment_servers.push(server_json)
+  deployment_instances.push(server_json)
 }
 EOS
 end
+
 
 # The policy declaration.
 # This is where the data is checked for anomalies and actions taken.
 policy "pol_deployment_check" do
   
   # Look at each item in the array that was produced by the javascript datasource above 
-  validate_each $ds_deployment_servers do
+  validate_each $ds_deployment_instances do
     
-    # Check the item and ignore out those items that are NOT in what is basically a running state.
-    # So this is a big nesting of logical ORs where if the item is in any of the "non-running" states, it's true and therefore not flagged as
+    # Really this is not necessary since the $ds_deployment_instances only contains stoppable instances.
+    # Check the item and ignore out those items that are NOT in what is a stoppable state.
+    # So this is a big nesting of logical ORs where if the item is in any of the "non-stoppable" states, it's true and therefore not flagged as
     # an anomaly.
-    # NOTE: Another way to skin this cat could be to do this test in the javascript and have the javascript datasource only return "running" servers.
-    # But one could assert that the datasources should be as logic-free as possible. They should just be data. And, let the policy apply the anomaly logic.
     check logic_or(
       logic_or(
-        logic_or(eq(val(item, "server_state"), "inactive"), eq(val(item, "server_state"), "decommissioning")),
-        logic_or(eq(val(item, "server_state"), "terminated"), eq(val(item, "server_state"), "terminating"))), 
+        logic_or(eq(val(item, "state"), "inactive"), eq(val(item, "state"), "decommissioning")),
+        logic_or(eq(val(item, "state"), "terminated"), eq(val(item, "state"), "terminating"))), 
       logic_or(
-        eq(val(item, "server_state"), "pending"), logic_or(eq(val(item, "server_state"), "stopped"), eq(val(item, "server_state"), "provisioned"))))
+        eq(val(item, "state"), "pending"), logic_or(eq(val(item, "state"), "stopped"), eq(val(item, "state"), "provisioned"))))
 
     # Send the report via email
     escalate $email_server_report
@@ -191,7 +240,7 @@ Stopping the following servers:\n
 | Server Name | Cloud Name | Server State | Running Instance HREF |
 | ----------- | ---------- | ------------ | --------------------- | 
 {{ range data -}}
-    | {{ .server_name }} | {{ .server_cloud_name }} | {{ .server_state }} | {{ .server_instance_href }} |
+    | {{ .name }} | {{ .cloud_name }} | {{ .state }} | {{ .href }} |
 {{ end -}}
 EOS
   end
@@ -217,17 +266,16 @@ resolution "send_resolution_email" do
   email $param_email do
     # It's best to keep the subjects the same within the policy so that they collate as email threads.
     subject_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): Policy Report for deployment \"{{ parameters.param_deployment_name }}\""
-    body_template "No running servers in deployment \"{{ parameters.param_deployment_name }}\""
+    body_template "Deployment {{ parameters.param_deployment_name }} servers stopped "
   end
 end
-
 
 # RightScale Cloud Language (RCL) used to take action.
 # The contents of $data only refer to the anomalies - i.e. the servers that are in a stoppable state.
 define stop_instances($data) do
   foreach $item in $data do
     # Find the instance
-    @instance = rs_cm.get(href: $item["server_instance_href"])
+    @instance = rs_cm.get(href: $item["href"])
     # Stop the instance
     @instance.stop()
   end
