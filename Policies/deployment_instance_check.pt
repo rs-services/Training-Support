@@ -137,7 +137,7 @@ for (var i = 0; i < servers.length; i++) {
   var server_state = server["state"]
     
   // Only want to return what are essentially running servers.
-  if ((server_state == "operational") || (server_state == "running") || (server_state == "pending") || (server_state == "booting") || (server_state == "stranded")) {
+  if ((server_state == "operational") || (server_state == "running") || (server_state == "booting") || (server_state == "stranded")) {
 
     // Get the href for the running instance of the server.
     var server_instance_href = ""
@@ -165,19 +165,18 @@ end
 # This is where the data is checked for anomalies and actions taken.
 policy "pol_deployment_check" do
   
-  # Look at each item in the array that was produced by the javascript datasource above and
-  validate_each $ds_deployment_running_servers do
+  # By the fact that the java script datasource above creates a list containing only servers that are in some way or another "running", 
+  # then we just need to check if we got a list at all.
+  # NOTE: There is a "validate_each" directive used to look at each "item" in the array
+  validate $ds_deployment_running_servers do
     
-    # By definition if we get this far, we have servers that can be stopped, but for educational purposes, we have a check that fails if the state is a running state.
-    check logic_or(
-      logic_or(
-        logic_or(eq(val(item, "server_state"), "inactive"), eq(val(item, "server_state"), "decommissioning")),
-        logic_or(eq(val(item, "server_state"), "terminated"), eq(val(item, "server_state"), "terminating"))), 
-      logic_or(eq(val(item, "server_state"), "stopped"), eq(val(item, "server_state"), "provisioned")))
-
-    # If any of the elements do NOT pass the check(s), then escalate will be invoked.
+    # By definition if we get this far, we have servers that can be stopped.
+    # If the user selected the Email Only option, this check fails and we execute email-only related actions.
+    check ne($param_action, "Email only")
+    
+    # Send the report via email
     escalate $email_server_report
-    
+        
     # If an incident that was open closes for whatever reason the resolution is executed.
     # For example, if the policy found running servers and then the next time it ran, all servers were not running, this would cause resolve to be invoked.
     resolve $send_resolution_email
@@ -199,18 +198,28 @@ EOS
   # to stop the servers. 
   # If so, then stop the servers.
   validate $ds_deployment_running_servers do
-    # Recall that for the escalation to execute, the check must fail.
-    # So if the user did indicate to stop the servers, this check will fail.
+    
+    # If the user selected the stop servers option, this check will fail.
     check ne($param_action, "Email and stop servers")
     
-    # All validations need a summary and detail template
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): Server stoppage report for deployment \"{{ parameters.param_deployment_name }}\""
-    detail_template "Stopping the servers in deployment, \"{{ parameters.param_deployment }}\""
-    
+    # Send the report via email
+    escalate $email_server_report
     # This escalation stops the servers
     escalate $stop_servers
     # This sends the email indicating the servers were stopped.
     resolve $send_resolution_email
+    
+    # The report is generated and presented in the policy's Incidents UI.
+    # It's also the default format for any emails sent by an escalation action.
+    # The "data" keyword object contains those items that failed a check above.
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): Policy Report for deployment \"{{ parameters.param_deployment_name }}\""
+    detail_template <<-EOS
+| Server Name | Cloud Name | Server State | Running Instance HREF |
+| ----------- | ---------- | ------------ | --------------------- | 
+{{ range data -}}
+    | {{ .server_name }} | {{ .server_cloud_name }} | {{ .server_state }} | {{ .server_instance_href }} |
+{{ end -}}
+EOS
   end
 end
 
