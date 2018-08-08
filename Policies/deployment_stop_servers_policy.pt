@@ -5,8 +5,22 @@
 # Deployment-scoped so as to make it possible for students to run the policy on their own deployment.
 # The requirements for this policy are as follows:
 # - Find running instances in user-specified deployment and stop them.
-# - Exclude any instances that are tagged with the user-specified tags - if any.
+# - Exclude instances that are tagged with the user-specified tags - if any.
 # - The report should show the cloud name for each instance that was found.
+#
+# Exercise #1:
+# - Create a deployment with at least running instance/server in it.
+# - Download policy and change the name directive in the policy.
+# - Upload the policy.
+# - Apply the policy.
+# - Look at the Incident report.
+# - See that the instance is stopped by the policy.
+#
+# Exercise #2:
+# - Add a feature such that the user can specify whether or not the instances should be stopped.
+# - Hints:
+#   - Add a parameter for the user to indicate whether she wants only a report or a report and action taken.
+#   - Use that parameter to drive whether or not to take the action.
 #
 
 name "Deployment Servers Stop Policy"
@@ -210,7 +224,6 @@ policy "pol_deployment_check" do
   # Look at each item in the array that was produced by the javascript datasource above 
   validate_each $ds_deployment_instances do
     
-    # Really this is not necessary since the $ds_deployment_instances only contains stoppable instances.
     # Check the item and ignore out those items that are NOT in what is a stoppable state.
     # So this is a big nesting of logical ORs where if the item is in any of the "non-stoppable" states, it's true and therefore not flagged as
     # an anomaly.
