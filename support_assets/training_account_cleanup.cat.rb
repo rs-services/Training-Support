@@ -51,10 +51,11 @@ define clean_account() do
   sub task_label: "Terminating running or failed cloud apps" do
     $wake_condition = "/^(terminated|failed)$/"
     foreach @execution in @executions do
-      #call utilities.log("execution:"+ @execution.name, to_s(to_object(@execution)))
+      #call utilities.log("found execution:"+ @execution.name, to_s(to_object(@execution)))
       if (@execution.status == "running") || (@execution.status == "failed")
+        #call utilities.log("terminating:"+ @execution.name, to_s(to_object(@execution)))
         @execution.terminate()
-        sleep_until(@execution.status[] =~ $wake_condition)
+        sleep_until(@execution.status =~ $wake_condition)
       end
     end
   end
@@ -125,7 +126,8 @@ define clean_account() do
   sub task_label: "Deleting deployments" do
     @deployments = rs_cm.deployments.get()
     foreach @deployment in @deployments do
-      if downcase(@deployment.name) != "default"
+      # Don't try to delete the default deployment or the deployment created by the running of this CAT.
+      if ((downcase(@deployment.name) != "default") && (@deployment.href != @@execution.deployment))
         @deployment.destroy()
       end
     end
@@ -188,6 +190,18 @@ define clean_account() do
     $new_password = "a"+uuid()
     call user_management.manage_training_account($new_password)
   end
+  
+  # Terminate the clean up app
+  call utilities.log(@@execution.name+": Self destruct sequence initiated.", "")
+  sub task_label: "Self destruct" do
+    $time = now() + 300 # seconds
+    rs_ss.scheduled_actions.create(
+      execution_id: @@execution.id,
+      action: "terminate",
+      first_occurrence: $time
+    )
+  end
+
 end
 
 
