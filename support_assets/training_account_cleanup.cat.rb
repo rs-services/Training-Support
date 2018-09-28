@@ -173,8 +173,11 @@ define clean_account() do
         sub on_error: skip do
           @cloud.ssh_keys().destroy()
         end
-      elsif ($cloud_type == "amazon") || ($cloud_type == "azure_v2") || ($cloud_type == "google")
+      end
+      
+      if ($cloud_type == "amazon") || ($cloud_type == "azure_v2") || ($cloud_type == "google")
         @sgs = @cloud.security_groups()
+        call utilities.log("Found these security groups", to_s(to_object(@sgs)))
         foreach @sg in @sgs do
           if downcase(@sg.name) != "default"
              @sg.destroy()
@@ -182,6 +185,37 @@ define clean_account() do
         end
       end
     end   
+  end
+  
+  # Terminate any applied policies
+  sub task_label: "Terminating applied policies" do
+
+    # Gather up the account number and shard and build the base API endpoint
+    call utilities.find_account_number() retrieve $account_num
+    call utilities.find_shard() retrieve $shard
+    $gov_api_host =  "https://governance-"+$shard+".rightscale.com"
+    
+    # Get the applied policies
+    $response = http_get(
+      url: $gov_api_host+"/api/governance/projects/"+$account_num+"/applied_policies",
+      headers: { 
+        "API-Version": "1.0",
+        "Content-Type": "application/json"
+      }
+    )
+    $applied_policies = $response["body"]["items"]
+    
+    # Loop through the applied policies and terminate them.
+    foreach $item in $applied_policies do
+      $app_pol_href = $item["href"]
+      $response = http_delete(
+        url: $gov_api_host+$app_pol_href,
+        headers: { 
+          "API-Version": "1.0",
+          "Content-Type": "application/json"
+        }
+        )
+    end
   end
   
   # Reset the training user password
