@@ -22,6 +22,11 @@
 #   - Add a parameter for the user to indicate whether she wants only a report or a report and action taken.
 #   - Use that parameter to drive whether or not to take the action.
 #
+# Exercise #3:
+# - Add approval flow to Exercise #1 policy.
+# - If adding approval to Exercise #2 policy, address the email-only use-case such that approval is not required. 
+#   - Hint: Create two validations in the policy declaration. One that does the email and one that does the email and stop.
+#
 
 name "Deployment Servers Stop Policy - Exercise 2"
 rs_pt_ver 20180301
