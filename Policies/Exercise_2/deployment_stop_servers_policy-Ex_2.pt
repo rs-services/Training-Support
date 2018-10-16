@@ -225,6 +225,10 @@ for (var i = 0; i < instances.length; i++) {
   // push object onto the output array
   deployment_instances.push(server_json)
 }
+// Example of how to dump data from a javascript datasource.
+// Can see contents in the "View Log" option for an applied policy.
+console.log("deployment_instances size: " + deployment_instances.length)
+
 EOS
 end
 

@@ -218,6 +218,10 @@ for (var i = 0; i < instances.length; i++) {
   // push object onto the output array
   deployment_instances.push(server_json)
 }
+// Example of how to dump data from a javascript datasource.
+// Can see contents in the "View Log" option for an applied policy.
+console.log("deployment_instances size: " + deployment_instances.length)
+
 EOS
 end
 
@@ -285,7 +289,7 @@ resolution "send_resolution_email" do
     subject_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): Policy Resolution Report for deployment \"{{ parameters.param_deployment_name }}\""
     body_template <<-EOS
 Deployment: {{ parameters.param_deployment_name }} \n 
-Action: {{parameters.param_action}}
+Action: Servers Stopped
 EOS
   end
 end
