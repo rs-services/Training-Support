@@ -25,15 +25,15 @@
 # Exercise #3:
 # - Add a feature to stop servers found in Incident
 # - Hints:
-#   - Add a cloud workflow definition
+#   - Add a new escalation to run a cloud workflow definition
 
 # Exercise #4:
-# - Add approval flow to Exercise #1 policy.
+# - Add approval flow to Exercise #3 policy.
 # - If adding approval to Exercise #2 policy, address the email-only use-case such that approval is not required.
 #   - Hint: Create two validations in the policy declaration. One that does the email and one that does the email and stop.
 #
 
-name "Deployment Servers Stop Policy - Exercise 1"
+name "Deployment Servers Stop Policy - Exercise 4"
 rs_pt_ver 20180301
 type "policy"
 short_description "Reports running servers in a deployment and stops them."
@@ -42,7 +42,7 @@ category "Training"
 
 # what permissions does this policy (and by extension the user applying the policy) need for this policy to work.
 permission "index_permissions" do
-  resources "rs_cm.deployments","rs_cm.clouds", "rs_cm.instances"
+  resources "rs_cm.deployments","rs_cm.clouds", "rs_cm.servers"
   actions   "rs_cm.index"
 end
 
@@ -63,6 +63,20 @@ parameter "param_deployment_name" do
   label "Name of deployment to check."
   allowed_pattern /^.+$/  # Makes this input required
   constraint_description "Must enter the name of a deployment to check."
+end
+
+parameter "param_instance_tag_list" do
+  type "list"
+  label "Tags to find instances"
+  description "List of tags used to filter instances that must validate policy. (e.g.: ec2:downsize=true)"
+  min_length 1
+  allowed_pattern /([\w]?)+\:([\w]?)+\=([\w]?)+|gce:([\w]?)+/
+end
+
+parameter "param_exclude_tags" do
+  type "list"
+  label "Tags to ignore instances"
+  description "List of tags that will exclude instances from being evaluated by this policy. Multiple tags are evaluated as an 'OR' condition. Tag keys or key/value pairs can be listed. Example: 'test,env=dev'"
 end
 
 parameter "param_email" do
@@ -95,6 +109,7 @@ resources "clouds", type: "rs_cm.clouds"
 resources "operational_instances", type: "rs_cm.instances" do
   iterate @clouds
   cloud_href href(iter_item)
+  tags all(any($param_instance_tag_list),none($param_exclude_tags))  # This tags directive makes it very easy to cull datasources based on tags.
   filter do
     deployment_href eq: href(first(@deployments))
     state eq:"operational"
@@ -106,6 +121,7 @@ end
 resources "running_instances", type: "rs_cm.instances" do
   iterate @clouds
   cloud_href href(iter_item)
+  tags all(any($param_instance_tag_list),none($param_exclude_tags))  # This tags directive makes it very easy to cull datasources based on tags.
   filter do
     deployment_href eq: href(first(@deployments))
     state eq:"running"
@@ -116,6 +132,7 @@ end
 resources "booting_instances", type: "rs_cm.instances" do
   iterate @clouds
   cloud_href href(iter_item)
+  tags all(any($param_instance_tag_list),none($param_exclude_tags))  # This tags directive makes it very easy to cull datasources based on tags.
   filter do
     deployment_href eq: href(first(@deployments))
     state eq:"booting"
@@ -129,6 +146,7 @@ datasource "ds_operational_instances" do
   field "href", href(iter_item)
   field "name", val(iter_item,"name")
   field "state", val(iter_item, "state")
+  field "tags", val(iter_item, "tags")
 end
 
 datasource "ds_running_instances" do
@@ -136,6 +154,7 @@ datasource "ds_running_instances" do
   field "href", href(iter_item)
   field "name", val(iter_item,"name")
   field "state", val(iter_item, "state")
+  field "tags", val(iter_item, "tags")
 end
 
 datasource "ds_booting_instances" do
@@ -143,6 +162,7 @@ datasource "ds_booting_instances" do
   field "href", href(iter_item)
   field "name", val(iter_item,"name")
   field "state", val(iter_item, "state")
+  field "tags", val(iter_item, "tags")
 end
 
 # This datasource returns only the cloud attributes we care about.
@@ -151,6 +171,7 @@ datasource "ds_clouds" do
   field "href", href(iter_item)
   field "cloud_type", val(iter_item, "cloud_type")
   field "name", val(iter_item,'name')
+
 end
 
 ## javascript based data sources ##
@@ -196,12 +217,13 @@ for (var i = 0; i < instances.length; i++) {
   var name = instance["name"]
   var state = instance["state"]
   var href = instance["href"]
+  var tags = instance['tags']
 
   var server_cloud_id = href.split("/")[3]  // The cloud ID is embedded in the instance ID of the form "/api/clouds/1/instances/ABCDE"
   var cloud_name = cloud_hash["/api/clouds/"+server_cloud_id]["cloud_name"]
 
   // build the json object
-  server_json = { "name": name, "href": href, "cloud_name": cloud_name, "state": state }
+  server_json = { "name": name, "href": href, "cloud_name": cloud_name, "state": state,"tags": tags }
 
   // push object onto the output array
   deployment_instances.push(server_json)
@@ -235,6 +257,7 @@ policy "pol_deployment_check" do
     escalate $email_server_report
 
     # This escalation stops the servers
+    escalate $stop_servers
 
     # If an incident that was open closes for whatever reason the resolution is executed.
     # For example, if the policy found running servers and then the next time it ran, all servers were not running, this would cause resolve to be invoked.
@@ -245,11 +268,11 @@ policy "pol_deployment_check" do
     # The "data" keyword object contains those items that failed a check above.
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): Policy Incident Report for deployment \"{{ parameters.param_deployment_name }}\""
     detail_template <<-EOS
-Stopping the following servers:\n
-| Server Name | Cloud Name | Server State | Running Instance HREF |
-| ----------- | ---------- | ------------ | --------------------- |
+Found the following running servers:\n
+| Server Name | Cloud Name | Server State | Running Instance HREF | Tags |
+| ----------- | ---------- | ------------ | --------------------- | ---- |
 {{ range data -}}
-    | {{ .name }} | {{ .cloud_name }} | {{ .state }} | {{ .href }} |
+    | {{ .name }} | {{ .cloud_name }} | {{ .state }} | {{ .href }} | {{.tags}}
 {{ end -}}
 EOS
   end
@@ -263,6 +286,21 @@ escalation "email_server_report" do
   email $param_email
 end
 
+# This escalation is invoked if the user indicated that the policy should actually stop the running servers.
+escalation "stop_servers" do
+  request_approval  do
+    label "Stop Servers Approval"
+    description "Approve whether or not to stop the servers."
+    parameter "approval_reason" do
+      type "string"
+      label "Reason for approval"
+      description "Explain why you are approving the action"
+    end
+  end
+  run "stop_instances", data
+  resolve_incident  # This is a function that marks the resultant incident as resolved.
+end
+
 # Policy resolution declaration.
 # Only runs if the incident changes from the "Open" state or resolve_incident function is executed.
 resolution "send_resolution_email" do
@@ -272,5 +310,16 @@ resolution "send_resolution_email" do
 Deployment: {{ parameters.param_deployment_name }} \n
 Action: Servers Stopped
 EOS
+  end
+end
+
+# RightScale Cloud Language (RCL) used to take action.
+# The contents of $data only refer to the anomalies - i.e. the servers that are in a stoppable state.
+define stop_instances($data) do
+  foreach $item in $data do
+    # Find the instance
+    @instance = rs_cm.get(href: $item["href"])
+    # Stop the instance
+    @instance.stop()
   end
 end
